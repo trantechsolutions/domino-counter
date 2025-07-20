@@ -92,12 +92,22 @@
             const [isLoading, setIsLoading] = useState(true);
             const [activeTab, setActiveTab] = useState('tracker');
 
+            // --- Authentication & Local Storage Effect ---
             useEffect(() => {
                 signInAnonymously(auth).catch(err => {
                     setError("Authentication failed. Please refresh.");
-                }).finally(() => setIsLoading(false));
+                });
+
+                // Check for a game ID in local storage
+                const lastGameId = localStorage.getItem('dominoLastGameId');
+                if (lastGameId) {
+                    handleJoinGame(lastGameId, true); // Attempt to auto-join
+                } else {
+                    setIsLoading(false);
+                }
             }, []);
 
+            // --- Game State Subscription Effect ---
             useEffect(() => {
                 if (!gameId) return;
                 const { db, doc, onSnapshot } = window.firebase;
@@ -107,6 +117,7 @@
                     } else {
                         setError(`Game with ID ${gameId} not found.`);
                         setGameId(null);
+                        localStorage.removeItem('dominoLastGameId');
                     }
                 });
                 return () => unsub();
@@ -117,27 +128,33 @@
                 setIsLoading(true);
                 const newGameId = generateGameId();
                 await setDoc(doc(db, "dominoGames", newGameId), { createdAt: new Date(), players: [], rounds: [] });
+                localStorage.setItem('dominoLastGameId', newGameId);
                 setGameId(newGameId);
                 setActiveTab('tracker');
                 setIsLoading(false);
             };
 
-            const handleJoinGame = (id) => {
+            const handleJoinGame = (id, isAutoJoin = false) => {
                 const { db, doc, getDoc } = window.firebase;
                 setIsLoading(true);
                 const upperId = id.toUpperCase();
                 getDoc(doc(db, "dominoGames", upperId)).then(docSnap => {
                     if (docSnap.exists()) {
+                        localStorage.setItem('dominoLastGameId', upperId);
                         setGameId(upperId);
                         setActiveTab('tracker');
                         setError('');
                     } else {
-                        setError("Game not found.");
+                        if (!isAutoJoin) setError("Game not found.");
+                        localStorage.removeItem('dominoLastGameId');
                     }
+                }).catch(() => {
+                    if (!isAutoJoin) setError("Error checking game ID.");
                 }).finally(() => setIsLoading(false));
             };
 
             const handleLeaveGame = () => {
+                localStorage.removeItem('dominoLastGameId');
                 setGameId(null);
                 setGameData(null);
                 setError('');
@@ -327,22 +344,27 @@
             const [pipCount, setPipCount] = useState(0);
             const animationFrameId = useRef(null);
             const [isLoading, setIsLoading] = useState(false);
+            const [loadingMessage, setLoadingMessage] = useState('');
 
             const startPipTracker = async () => {
                 setIsLoading(true);
                 try {
                     let loadedModel = model;
                     if (!loadedModel) {
-                        // Load the Roboflow model
-                        loadedModel = await roboflow.auth({
-                            publishable_key: "rf_B4s4nCgCi5S9sLztU5dY"
-                        }).load({
-                            model: "double-twelve-dominoes",
-                            version: 2
-                        });
+                        if (!window.roboflow) {
+                            alert("Roboflow library not loaded. Please check your internet connection and refresh.");
+                            setIsLoading(false);
+                            return;
+                        }
+                        setLoadingMessage('Authenticating AI...');
+                        const rf = await roboflow.auth({ publishable_key: "rf_B4s4nCgCi5S9sLztU5dY" });
+                        
+                        setLoadingMessage('Loading Domino Model...');
+                        loadedModel = await rf.load({ model: "double-twelve-dominoes", version: 2 });
                         setModel(loadedModel);
                     }
                     
+                    setLoadingMessage('Starting Camera...');
                     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                     videoRef.current.srcObject = stream;
                     videoRef.current.onloadedmetadata = () => {
@@ -350,18 +372,19 @@
                         canvasRef.current.width = videoRef.current.videoWidth;
                         canvasRef.current.height = videoRef.current.videoHeight;
                         setIsDetecting(true);
+                        setIsLoading(false);
                     };
                 } catch (err) {
                     console.error("Error starting Pip Tracker:", err);
-                    alert("Failed to start camera or load model. Please grant permissions and try again.");
+                    alert(`Failed to start camera or load model: ${err.message}. Please grant permissions and try again.`);
+                    setIsLoading(false);
                 }
-                setIsLoading(false);
             };
             
             const stopPipTracker = () => {
                 setIsDetecting(false);
                 if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-                if (videoRef.current.srcObject) {
+                if (videoRef.current && videoRef.current.srcObject) {
                     videoRef.current.srcObject.getTracks().forEach(track => track.stop());
                 }
             };
@@ -369,40 +392,39 @@
             useEffect(() => {
                 if (isDetecting) {
                     const detectLoop = async () => {
-                        if (!isDetecting || !model || !videoRef.current) return;
+                        if (!isDetecting || !model || !videoRef.current || videoRef.current.readyState < 2) {
+                            if (isDetecting) animationFrameId.current = requestAnimationFrame(detectLoop);
+                            return;
+                        };
                         
-                        // Get predictions from the Roboflow model
-                        const predictions = await model.detect(videoRef.current);
-                        
-                        // Sum the values of the detected classes
-                        const totalPips = predictions.reduce((sum, p) => {
-                            const pipValue = parseInt(p.class, 10);
-                            return isNaN(pipValue) ? sum : sum + pipValue;
-                        }, 0);
-                        setPipCount(totalPips);
-                        
-                        // Draw detections on the canvas
-                        const ctx = canvasRef.current.getContext('2d');
-                        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-                        predictions.forEach(p => {
-                            const { x, y, width, height, class: className, confidence } = p;
-                            const drawX = x - width / 2;
-                            const drawY = y - height / 2;
-
-                            // Bounding box
-                            ctx.strokeStyle = '#2ecc71';
-                            ctx.lineWidth = 2;
-                            ctx.strokeRect(drawX, drawY, width, height);
-
-                            // Label
-                            const text = `${className} (${(confidence * 100).toFixed(0)}%)`;
-                            ctx.fillStyle = '#2ecc71';
-                            const textWidth = ctx.measureText(text).width;
-                            ctx.fillRect(drawX, drawY, textWidth + 8, 20);
-                            ctx.fillStyle = '#ffffff';
-                            ctx.font = '14px sans-serif';
-                            ctx.fillText(text, drawX + 4, drawY + 14);
-                        });
+                        try {
+                            const predictions = await model.detect(videoRef.current);
+                            const totalPips = predictions.reduce((sum, p) => {
+                                const pipValue = parseInt(p.class, 10);
+                                return isNaN(pipValue) ? sum : sum + pipValue;
+                            }, 0);
+                            setPipCount(totalPips);
+                            
+                            const ctx = canvasRef.current.getContext('2d');
+                            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                            predictions.forEach(p => {
+                                const { x, y, width, height, class: className, confidence } = p;
+                                const drawX = x - width / 2;
+                                const drawY = y - height / 2;
+                                ctx.strokeStyle = '#2ecc71';
+                                ctx.lineWidth = 2;
+                                ctx.strokeRect(drawX, drawY, width, height);
+                                const text = `${className} (${(confidence * 100).toFixed(0)}%)`;
+                                ctx.fillStyle = '#2ecc71';
+                                const textWidth = ctx.measureText(text).width;
+                                ctx.fillRect(drawX, drawY, textWidth + 8, 20);
+                                ctx.fillStyle = '#ffffff';
+                                ctx.font = '14px sans-serif';
+                                ctx.fillText(text, drawX + 4, drawY + 14);
+                            });
+                        } catch (err) {
+                            console.error("Detection error:", err);
+                        }
                         
                         animationFrameId.current = requestAnimationFrame(detectLoop);
                     };
@@ -425,8 +447,8 @@
                     </div>
                     <div className="mt-4">
                         {!isDetecting ? (
-                            <button onClick={startPipTracker} disabled={isLoading} className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 disabled:bg-indigo-400">
-                                {isLoading ? 'Loading Model...' : 'Start Camera'}
+                            <button onClick={startPipTracker} disabled={isLoading} className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 disabled:bg-indigo-400 disabled:cursor-not-allowed">
+                                {isLoading ? loadingMessage : 'Start Camera'}
                             </button>
                         ) : (
                             <button onClick={stopPipTracker} className="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-red-700 transition-all">Stop Camera</button>
