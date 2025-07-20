@@ -15,9 +15,9 @@
     <!-- Babel to transpile JSX in the browser -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- TensorFlow.js and COCO-SSD model for Pip Tracker -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <!-- Roboflow AI Model Loader -->
+    <script src="https://cdn.jsdelivr.net/npm/roboflow-js"></script>
+
 </head>
 <body>
     
@@ -333,7 +333,13 @@
                 try {
                     let loadedModel = model;
                     if (!loadedModel) {
-                        loadedModel = await cocoSsd.load();
+                        // Load the Roboflow model
+                        loadedModel = await roboflow.auth({
+                            publishable_key: "rf_B4s4nCgCi5S9sLztU5dY"
+                        }).load({
+                            model: "double-twelve-dominoes",
+                            version: 2
+                        });
                         setModel(loadedModel);
                     }
                     
@@ -346,6 +352,7 @@
                         setIsDetecting(true);
                     };
                 } catch (err) {
+                    console.error("Error starting Pip Tracker:", err);
                     alert("Failed to start camera or load model. Please grant permissions and try again.");
                 }
                 setIsLoading(false);
@@ -363,28 +370,38 @@
                 if (isDetecting) {
                     const detectLoop = async () => {
                         if (!isDetecting || !model || !videoRef.current) return;
-                        const predictions = await model.detect(videoRef.current);
-                        const detectedDots = predictions.filter(p => {
-                            const [x, y, width, height] = p.bbox;
-                            const aspectRatio = width / height;
-                            return p.score > 0.60 && aspectRatio > 0.7 && aspectRatio < 1.3;
-                        });
-                        setPipCount(detectedDots.length);
                         
+                        // Get predictions from the Roboflow model
+                        const predictions = await model.detect(videoRef.current);
+                        
+                        // Sum the values of the detected classes
+                        const totalPips = predictions.reduce((sum, p) => {
+                            const pipValue = parseInt(p.class, 10);
+                            return isNaN(pipValue) ? sum : sum + pipValue;
+                        }, 0);
+                        setPipCount(totalPips);
+                        
+                        // Draw detections on the canvas
                         const ctx = canvasRef.current.getContext('2d');
                         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-                        detectedDots.forEach(prediction => {
-                            const [x, y, width, height] = prediction.bbox;
-                            const centerX = x + width / 2;
-                            const centerY = y + height / 2;
-                            const radius = (width + height) / 4;
-                            ctx.beginPath();
-                            ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-                            ctx.fillStyle = 'rgba(46, 204, 113, 0.3)';
-                            ctx.fill();
-                            ctx.strokeStyle = 'rgba(46, 204, 113, 0.8)';
+                        predictions.forEach(p => {
+                            const { x, y, width, height, class: className, confidence } = p;
+                            const drawX = x - width / 2;
+                            const drawY = y - height / 2;
+
+                            // Bounding box
+                            ctx.strokeStyle = '#2ecc71';
                             ctx.lineWidth = 2;
-                            ctx.stroke();
+                            ctx.strokeRect(drawX, drawY, width, height);
+
+                            // Label
+                            const text = `${className} (${(confidence * 100).toFixed(0)}%)`;
+                            ctx.fillStyle = '#2ecc71';
+                            const textWidth = ctx.measureText(text).width;
+                            ctx.fillRect(drawX, drawY, textWidth + 8, 20);
+                            ctx.fillStyle = '#ffffff';
+                            ctx.font = '14px sans-serif';
+                            ctx.fillText(text, drawX + 4, drawY + 14);
                         });
                         
                         animationFrameId.current = requestAnimationFrame(detectLoop);
@@ -403,7 +420,7 @@
                         <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full"></canvas>
                     </div>
                     <div className="text-center bg-gray-100 p-4 rounded-lg">
-                        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Detected Pips</h2>
+                        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Pip Value</h2>
                         <p className="text-7xl font-extrabold text-indigo-600">{pipCount}</p>
                     </div>
                     <div className="mt-4">
