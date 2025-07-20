@@ -3,239 +3,424 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <title>Domino Counter AI</title>
-    <!-- Load TensorFlow.js and the COCO-SSD model -->
+    <title>Domino Score Tracker & Pip Counter</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React Libraries -->
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    
+    <!-- Babel to transpile JSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- TensorFlow.js and COCO-SSD model for Pip Tracker -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        /* Custom focus-visible styles for better accessibility */
-        button:focus-visible, input:focus-visible {
-            outline: 2px solid #4f46e5;
-            outline-offset: 2px;
-        }
-        /* Loading spinner animation */
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #4f46e5;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+<body>
+    
+    <div id="root"></div>
 
-    <div id="app-container" class="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 space-y-6">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
+
+        // Use the configuration provided by the user.
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjauaPCk9l9HiYlyNXQTnDrnJDbeIDNHE",
+            authDomain: "domino-score-tracker.firebaseapp.com",
+            projectId: "domino-score-tracker",
+            storageBucket: "domino-score-tracker.firebasestorage.app",
+            messagingSenderId: "653174099619",
+            appId: "1:653174099619:web:7daf0e58a6429dd3b07916"
+        };
         
-        <header class="text-center">
-            <h1 class="text-3xl font-bold text-gray-800">Pip Tracker</h1>
-            <p class="text-gray-500">Real-time Domino Dot Counter</p>
-        </header>
+        const app = initializeApp(typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-        <!-- Camera and Canvas Section -->
-        <div id="video-container" class="relative bg-gray-900 rounded-lg overflow-hidden border-2 border-gray-200">
-            <video id="video" playsinline autoplay muted class="w-full h-auto block"></video>
-            <canvas id="overlay-canvas" class="absolute top-0 left-0 w-full h-full"></canvas>
-            <div id="loading-overlay" class="absolute inset-0 bg-gray-900 bg-opacity-75 flex-col items-center justify-center hidden">
-                <div class="loader"></div>
-                <p id="loading-text" class="text-white mt-4">Starting Camera...</p>
-            </div>
-        </div>
+        window.firebase = {
+            auth,
+            db,
+            signInAnonymously,
+            doc,
+            setDoc,
+            getDoc,
+            onSnapshot,
+            updateDoc,
+            arrayUnion
+        };
+    </script>
 
-        <!-- Real-time Count Display -->
-        <div id="count-display" class="text-center bg-gray-100 p-4 rounded-lg hidden">
-            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Detected Pips</h2>
-            <p id="pip-count" class="text-7xl font-extrabold text-indigo-600">0</p>
-        </div>
+    <!-- React Application Code -->
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
 
-        <!-- Controls Section -->
-        <div id="controls-section" class="mt-4">
-            <button id="start-button" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none">
-                Start Camera
-            </button>
-            <button id="stop-button" class="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-red-700 transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none hidden">
-                Stop Camera
-            </button>
-        </div>
+        // --- Helper Functions & Constants ---
+        const generateGameId = () => {
+            return Math.random().toString(36).substring(2, 8).toUpperCase();
+        };
 
-        <!-- Instructions -->
-        <div class="bg-indigo-50 border-l-4 border-indigo-500 text-indigo-800 p-4 rounded-r-lg">
-            <h3 class="font-bold">Tips for Best Results</h3>
-            <ul class="list-disc list-inside text-sm mt-2">
-                <li>Use a plain, light-colored background.</li>
-                <li>Ensure good, even lighting without harsh shadows.</li>
-                <li>Hold the domino steady to get a clear count.</li>
-                <li>The AI is looking for small, round shapes.</li>
-            </ul>
-        </div>
-    </div>
+        const PlayerIcon = () => (
+            <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"></path>
+            </svg>
+        );
 
-<script>
-    // DOM Element References
-    const video = document.getElementById('video');
-    const startButton = document.getElementById('start-button');
-    const stopButton = document.getElementById('stop-button');
-    const loadingOverlay = document.getElementById('loading-overlay');
-    const loadingText = document.getElementById('loading-text');
-    
-    const overlayCanvas = document.getElementById('overlay-canvas');
-    const overlayCtx = overlayCanvas.getContext('2d');
+        const TrophyIcon = ({ className }) => (
+             <svg className={`w-5 h-5 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 11l3-3m0 0l3 3m-3-3v8m0-13a9 9 0 110 18 9 9 0 010-18z"></path></svg>
+        );
+        
+        const GoldMedalIcon = () => (
+            <svg className="w-5 h-5 text-yellow-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" clipRule="evenodd" />
+            </svg>
+        );
 
-    const countDisplay = document.getElementById('count-display');
-    const pipCountEl = document.getElementById('pip-count');
-    
-    // App State
-    let model = null; // To hold the loaded AI model
-    let isDetecting = false;
-    let animationFrameId = null;
 
-    // --- Event Listeners ---
-    startButton.addEventListener('click', startApp);
-    stopButton.addEventListener('click', stopApp);
+        // --- Main App Component ---
+        function App() {
+            const { auth, signInAnonymously } = window.firebase;
+            const [user, setUser] = useState(null);
+            const [gameId, setGameId] = useState(null);
+            const [gameData, setGameData] = useState(null);
+            const [error, setError] = useState('');
+            const [isLoading, setIsLoading] = useState(true);
+            const [activeTab, setActiveTab] = useState('tracker');
 
-    // --- Core Functions ---
-    async function startApp() {
-        loadingOverlay.classList.remove('hidden');
-        loadingOverlay.classList.add('flex');
-        startButton.disabled = true;
-        startButton.classList.add('opacity-50');
+            useEffect(() => {
+                signInAnonymously(auth).catch(err => {
+                    setError("Authentication failed. Please refresh.");
+                }).finally(() => setIsLoading(false));
+            }, []);
 
-        // Step 1: Load the AI model if it's not already loaded
-        if (!model) {
-            loadingText.textContent = "Loading AI Model...";
-            try {
-                model = await cocoSsd.load();
-            } catch (err) {
-                console.error("Failed to load model", err);
-                alert("Failed to load the AI model. Please check your internet connection and try again.");
-                stopApp(); // Reset UI
-                return;
+            useEffect(() => {
+                if (!gameId) return;
+                const { db, doc, onSnapshot } = window.firebase;
+                const unsub = onSnapshot(doc(db, "dominoGames", gameId), (doc) => {
+                    if (doc.exists()) {
+                        setGameData(doc.data());
+                    } else {
+                        setError(`Game with ID ${gameId} not found.`);
+                        setGameId(null);
+                    }
+                });
+                return () => unsub();
+            }, [gameId]);
+
+            const handleCreateGame = async () => {
+                const { db, doc, setDoc } = window.firebase;
+                setIsLoading(true);
+                const newGameId = generateGameId();
+                await setDoc(doc(db, "dominoGames", newGameId), { createdAt: new Date(), players: [], rounds: [] });
+                setGameId(newGameId);
+                setActiveTab('tracker');
+                setIsLoading(false);
+            };
+
+            const handleJoinGame = (id) => {
+                const { db, doc, getDoc } = window.firebase;
+                setIsLoading(true);
+                const upperId = id.toUpperCase();
+                getDoc(doc(db, "dominoGames", upperId)).then(docSnap => {
+                    if (docSnap.exists()) {
+                        setGameId(upperId);
+                        setActiveTab('tracker');
+                        setError('');
+                    } else {
+                        setError("Game not found.");
+                    }
+                }).finally(() => setIsLoading(false));
+            };
+
+            const handleLeaveGame = () => {
+                setGameId(null);
+                setGameData(null);
+                setError('');
+            };
+
+            if (isLoading && !gameId) {
+                return <div className="flex items-center justify-center min-h-screen bg-gray-100"><div className="text-lg font-medium">Loading...</div></div>;
             }
+
+            return (
+                <div className="bg-gray-50 min-h-screen font-sans">
+                    <div className="container mx-auto p-4 max-w-4xl">
+                        <header className="text-center my-6">
+                            <h1 className="text-4xl md:text-5xl font-extrabold text-gray-800">Domino Suite</h1>
+                            <p className="text-gray-500 mt-1">Score Tracking & Pip Counting</p>
+                        </header>
+
+                        {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded-md" role="alert"><p>{error}</p></div>}
+                        
+                        {!gameId ? (
+                            <Lobby onCreateGame={handleCreateGame} onJoinGame={handleJoinGame} isLoading={isLoading} />
+                        ) : (
+                            <div>
+                                <div className="mb-6">
+                                    <div className="border-b border-gray-200">
+                                        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                                            <button onClick={() => setActiveTab('tracker')} className={`${activeTab === 'tracker' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}>Score Tracker</button>
+                                            <button onClick={() => setActiveTab('pip_counter')} className={`${activeTab === 'pip_counter' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}>Pip Counter</button>
+                                        </nav>
+                                    </div>
+                                </div>
+                                {activeTab === 'tracker' && <Scoreboard gameId={gameId} gameData={gameData} onLeaveGame={handleLeaveGame} />}
+                                {activeTab === 'pip_counter' && <PipTracker />}
+                            </div>
+                        )}
+
+                        <footer className="text-center mt-10 text-gray-400 text-sm">
+                            <p>Built with React & Firebase</p>
+                        </footer>
+                    </div>
+                </div>
+            );
         }
 
-        // Step 2: Start the camera
-        loadingText.textContent = "Starting Camera...";
-        const stream = await startCamera();
-        if (!stream) {
-            stopApp(); // Reset UI on failure
-            return;
+        function Lobby({ onCreateGame, onJoinGame, isLoading }) {
+            const [joinId, setJoinId] = useState('');
+            return (
+                <div className="bg-white p-6 md:p-8 rounded-2xl shadow-lg">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                        <div className="text-center">
+                            <h2 className="text-2xl font-bold text-gray-700 mb-3">Create a New Game</h2>
+                            <p className="text-gray-500 mb-4">Start a new scoreboard and invite your friends.</p>
+                            <button onClick={onCreateGame} disabled={isLoading} className="w-full bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 disabled:bg-indigo-400">Create Game</button>
+                        </div>
+                        <div className="text-center border-t md:border-t-0 md:border-l border-gray-200 pt-8 md:pt-0 md:pl-8">
+                             <h2 className="text-2xl font-bold text-gray-700 mb-3">Join an Existing Game</h2>
+                             <p className="text-gray-500 mb-4">Enter the 6-character Game ID to join.</p>
+                            <form onSubmit={(e) => { e.preventDefault(); if(joinId.trim()) onJoinGame(joinId.trim()); }}>
+                                <input type="text" value={joinId} onChange={(e) => setJoinId(e.target.value)} placeholder="e.g. ABC123" maxLength="6" className="w-full p-3 text-center text-lg font-mono tracking-widest uppercase border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"/>
+                                <button type="submit" disabled={isLoading} className="w-full mt-3 bg-gray-700 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-gray-800 transition-all duration-200 disabled:bg-gray-500">Join Game</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            );
         }
 
-        // Step 3: Finalize UI and start detection loop
-        startButton.classList.add('hidden');
-        stopButton.classList.remove('hidden');
-        countDisplay.classList.remove('hidden');
-        loadingOverlay.classList.add('hidden');
-        loadingOverlay.classList.remove('flex');
+        function Scoreboard({ gameId, gameData, onLeaveGame }) {
+            const [newPlayer, setNewPlayer] = useState('');
+            const [scores, setScores] = useState({});
+            const { db, doc, updateDoc, arrayUnion } = window.firebase;
 
-        isDetecting = true;
-        detectLoop();
-    }
+            useEffect(() => {
+                if (gameData?.players) {
+                    const initialScores = {};
+                    gameData.players.forEach(p => { initialScores[p.id] = ''; });
+                    setScores(initialScores);
+                }
+            }, [gameData?.players ? JSON.stringify(gameData.players) : '']);
 
-    function stopApp() {
-        isDetecting = false;
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
+            const rankedPlayers = useMemo(() => {
+                if (!gameData?.players) return [];
+                const totals = gameData.players.map(player => {
+                    const totalScore = gameData.rounds.reduce((acc, round) => acc + (round.scores[player.id] || 0), 0);
+                    return { ...player, totalScore };
+                });
+                totals.sort((a, b) => a.totalScore - b.totalScore);
+                let rank = 1;
+                return totals.map((player, index) => {
+                    if (index > 0 && player.totalScore > totals[index - 1].totalScore) {
+                        rank = index + 1;
+                    }
+                    return { ...player, rank };
+                });
+            }, [gameData]);
+
+            const handleAddPlayer = async (e) => {
+                e.preventDefault();
+                if (!newPlayer.trim()) return;
+                const player = { id: Date.now().toString(), name: newPlayer.trim() };
+                await updateDoc(doc(db, "dominoGames", gameId), { players: arrayUnion(player) });
+                setNewPlayer('');
+            };
+
+            const handleScoreChange = (playerId, value) => setScores(prev => ({ ...prev, [playerId]: value }));
+
+            const handleSubmitScores = async () => {
+                const finalScores = {};
+                for (const player of gameData.players) {
+                    const scoreString = scores[player.id];
+                    if (scoreString === '' || scoreString === null || isNaN(parseInt(scoreString, 10))) {
+                        alert("Please enter a valid score for every player. A score of 0 is valid.");
+                        return;
+                    }
+                    finalScores[player.id] = parseInt(scoreString, 10);
+                }
+                await updateDoc(doc(db, "dominoGames", gameId), { rounds: arrayUnion({ roundNumber: gameData.rounds.length + 1, scores: finalScores }) });
+            };
+
+            if (!gameData) return <div className="text-center p-8"><div className="font-bold">Loading Game Data...</div></div>;
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-white p-4 rounded-lg shadow-md flex justify-between items-center">
+                        <div><span className="font-semibold text-gray-600">Game ID:</span><span className="ml-2 font-bold text-indigo-600 text-lg tracking-wider">{gameId}</span></div>
+                        <button onClick={onLeaveGame} className="text-sm bg-red-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-600 transition">Leave Game</button>
+                    </div>
+
+                    {gameData.rounds.length === 0 && (
+                         <div className="bg-white p-6 rounded-2xl shadow-lg">
+                            <h3 className="font-bold text-xl mb-4 text-gray-700">Add Players</h3>
+                            <form onSubmit={handleAddPlayer} className="flex gap-2">
+                                <input type="text" value={newPlayer} onChange={(e) => setNewPlayer(e.target.value)} placeholder="Enter player name" className="flex-grow p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"/>
+                                <button type="submit" className="bg-indigo-600 text-white font-bold py-3 px-5 rounded-lg hover:bg-indigo-700 transition">Add</button>
+                            </form>
+                        </div>
+                    )}
+
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="bg-gray-100">
+                                    <tr>
+                                        <th className="p-4 font-bold text-gray-600 text-center">Rank</th>
+                                        <th className="p-4 font-bold text-gray-600 w-1/3">Player</th>
+                                        {gameData.rounds.map(r => <th key={r.roundNumber} className="p-4 font-bold text-gray-600 text-center">R{r.roundNumber}</th>)}
+                                        <th className="p-4 font-bold text-gray-600 text-center w-1/6">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rankedPlayers.map((player, index) => (
+                                        <tr key={player.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                            <td className="p-4 font-bold text-gray-700 text-center">{player.rank === 1 ? <GoldMedalIcon /> : player.rank}</td>
+                                            <td className="p-4 font-semibold text-gray-800 flex items-center gap-2"><PlayerIcon />{player.name}</td>
+                                            {gameData.rounds.map(r => <td key={r.roundNumber} className="p-4 text-center text-gray-700">{r.scores[player.id] ?? 0}</td>)}
+                                            <td className="p-4 font-bold text-lg text-indigo-700 text-center">{player.totalScore}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {gameData.players.length > 0 && (
+                        <div className="bg-white p-6 rounded-2xl shadow-lg">
+                            <h3 className="font-bold text-xl mb-4 text-gray-700">Enter Scores for Round {gameData.rounds.length + 1}</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {gameData.players.map(player => (
+                                    <div key={player.id}>
+                                        <label className="font-semibold text-gray-600">{player.name}</label>
+                                        <input type="number" value={scores[player.id] ?? ''} onChange={(e) => handleScoreChange(player.id, e.target.value)} className="w-full mt-1 p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="0"/>
+                                    </div>
+                                ))}
+                            </div>
+                            <button onClick={handleSubmitScores} className="w-full mt-6 bg-green-600 text-white font-bold py-3 rounded-lg shadow-md hover:bg-green-700 transition">Submit Scores</button>
+                        </div>
+                    )}
+                </div>
+            );
         }
 
-        // Stop the camera stream
-        if (video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
-            video.srcObject = null;
-        }
-        
-        // Reset UI
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-        pipCountEl.textContent = '0';
-        countDisplay.classList.add('hidden');
-        stopButton.classList.add('hidden');
-        startButton.classList.remove('hidden');
-        startButton.disabled = false;
-        startButton.classList.remove('opacity-50');
-    }
+        function PipTracker() {
+            const videoRef = useRef(null);
+            const canvasRef = useRef(null);
+            const [model, setModel] = useState(null);
+            const [isDetecting, setIsDetecting] = useState(false);
+            const [pipCount, setPipCount] = useState(0);
+            const animationFrameId = useRef(null);
+            const [isLoading, setIsLoading] = useState(false);
 
-    async function startCamera() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' } // Prefer rear camera
-            });
-            video.srcObject = stream;
-            return new Promise(resolve => {
-                video.onloadedmetadata = () => {
-                    video.play();
-                    overlayCanvas.width = video.videoWidth;
-                    overlayCanvas.height = video.videoHeight;
-                    resolve(stream);
+            const startPipTracker = async () => {
+                setIsLoading(true);
+                try {
+                    let loadedModel = model;
+                    if (!loadedModel) {
+                        loadedModel = await cocoSsd.load();
+                        setModel(loadedModel);
+                    }
+                    
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                    videoRef.current.srcObject = stream;
+                    videoRef.current.onloadedmetadata = () => {
+                        videoRef.current.play();
+                        canvasRef.current.width = videoRef.current.videoWidth;
+                        canvasRef.current.height = videoRef.current.videoHeight;
+                        setIsDetecting(true);
+                    };
+                } catch (err) {
+                    alert("Failed to start camera or load model. Please grant permissions and try again.");
+                }
+                setIsLoading(false);
+            };
+            
+            const stopPipTracker = () => {
+                setIsDetecting(false);
+                if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+                if (videoRef.current.srcObject) {
+                    videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+                }
+            };
+            
+            useEffect(() => {
+                if (isDetecting) {
+                    const detectLoop = async () => {
+                        if (!isDetecting || !model || !videoRef.current) return;
+                        const predictions = await model.detect(videoRef.current);
+                        const detectedDots = predictions.filter(p => {
+                            const [x, y, width, height] = p.bbox;
+                            const aspectRatio = width / height;
+                            return p.score > 0.60 && aspectRatio > 0.7 && aspectRatio < 1.3;
+                        });
+                        setPipCount(detectedDots.length);
+                        
+                        const ctx = canvasRef.current.getContext('2d');
+                        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                        detectedDots.forEach(prediction => {
+                            const [x, y, width, height] = prediction.bbox;
+                            const centerX = x + width / 2;
+                            const centerY = y + height / 2;
+                            const radius = (width + height) / 4;
+                            ctx.beginPath();
+                            ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                            ctx.fillStyle = 'rgba(46, 204, 113, 0.3)';
+                            ctx.fill();
+                            ctx.strokeStyle = 'rgba(46, 204, 113, 0.8)';
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        });
+                        
+                        animationFrameId.current = requestAnimationFrame(detectLoop);
+                    };
+                    detectLoop();
+                }
+                return () => {
+                    if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
                 };
-            });
-        } catch (err) {
-            console.error("Camera Error:", err);
-            alert('Could not access the camera. Please ensure you grant permission and are using a secure (https) connection.');
-            return null;
+            }, [isDetecting, model]);
+
+            return (
+                <div className="bg-white p-6 rounded-2xl shadow-lg space-y-6">
+                    <div className="relative bg-gray-900 rounded-lg overflow-hidden border-2 border-gray-200">
+                        <video ref={videoRef} playsInline autoPlay muted className="w-full h-auto block"></video>
+                        <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full"></canvas>
+                    </div>
+                    <div className="text-center bg-gray-100 p-4 rounded-lg">
+                        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Detected Pips</h2>
+                        <p className="text-7xl font-extrabold text-indigo-600">{pipCount}</p>
+                    </div>
+                    <div className="mt-4">
+                        {!isDetecting ? (
+                            <button onClick={startPipTracker} disabled={isLoading} className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 disabled:bg-indigo-400">
+                                {isLoading ? 'Loading Model...' : 'Start Camera'}
+                            </button>
+                        ) : (
+                            <button onClick={stopPipTracker} className="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-red-700 transition-all">Stop Camera</button>
+                        )}
+                    </div>
+                </div>
+            );
         }
-    }
 
-    async function detectLoop() {
-        if (!isDetecting) return;
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
 
-        // 1. Use the AI model to detect objects in the video frame
-        const predictions = await model.detect(video);
-
-        // 2. Filter predictions to find likely domino dots
-        const detectedDots = predictions.filter(p => {
-            const [x, y, width, height] = p.bbox;
-            const aspectRatio = width / height;
-            // Loosening the confidence requirement slightly can help in varied lighting
-            return p.score > 0.60 && aspectRatio > 0.7 && aspectRatio < 1.3;
-        });
-
-        // 3. Update UI with the count
-        pipCountEl.textContent = detectedDots.length;
-
-        // 4. Draw detection circles on the overlay canvas
-        drawDetections(detectedDots);
-
-        // 5. Request the next frame
-        animationFrameId = requestAnimationFrame(detectLoop);
-    }
-
-    /**
-     * Draws circles on the overlay canvas to mark detected dots.
-     * @param {Array} predictions - An array of prediction objects from the AI model.
-     */
-    function drawDetections(predictions) {
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-        
-        predictions.forEach(prediction => {
-            const [x, y, width, height] = prediction.bbox;
-            const centerX = x + width / 2;
-            const centerY = y + height / 2;
-            const radius = (width + height) / 4;
-
-            // Draw the circle
-            overlayCtx.beginPath();
-            overlayCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-            overlayCtx.fillStyle = 'rgba(46, 204, 113, 0.3)'; // Semi-transparent green fill
-            overlayCtx.fill();
-            overlayCtx.strokeStyle = 'rgba(46, 204, 113, 0.8)'; // Solid green border
-            overlayCtx.lineWidth = 2;
-            overlayCtx.stroke();
-        });
-    }
-</script>
 </body>
 </html>
