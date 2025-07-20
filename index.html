@@ -11,7 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -41,8 +41,8 @@
     <div id="app-container" class="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 space-y-6">
         
         <header class="text-center">
-            <h1 class="text-3xl font-bold text-gray-800">Domino Counter</h1>
-            <p class="text-gray-500">Mexican Train Scorer</p>
+            <h1 class="text-3xl font-bold text-gray-800">Pip Tracker</h1>
+            <p class="text-gray-500">Real-time Domino Dot Counter</p>
         </header>
 
         <!-- Camera and Canvas Section -->
@@ -55,32 +55,20 @@
             </div>
         </div>
 
+        <!-- Real-time Count Display -->
+        <div id="count-display" class="text-center bg-gray-100 p-4 rounded-lg hidden">
+            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Detected Pips</h2>
+            <p id="pip-count" class="text-7xl font-extrabold text-indigo-600">0</p>
+        </div>
+
         <!-- Controls Section -->
-        <div id="controls-section">
+        <div id="controls-section" class="mt-4">
             <button id="start-button" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none">
-                Start Camera & Load AI
+                Start Camera
             </button>
-            <button id="scan-button" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none hidden">
-                Scan Domino
+            <button id="stop-button" class="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-red-700 transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none hidden">
+                Stop Camera
             </button>
-        </div>
-
-        <!-- Results Display -->
-        <div id="results-section" class="grid grid-cols-2 gap-4 text-center hidden">
-            <div class="bg-gray-100 p-4 rounded-lg">
-                <h2 class="text-sm font-medium text-gray-500">Current Scan</h2>
-                <p id="current-count" class="text-4xl font-bold text-indigo-600">0</p>
-            </div>
-            <div class="bg-gray-100 p-4 rounded-lg">
-                <h2 class="text-sm font-medium text-gray-500">Total Score</h2>
-                <p id="total-score" class="text-4xl font-bold text-gray-800">0</p>
-            </div>
-        </div>
-
-        <!-- Action Buttons -->
-        <div id="actions-section" class="grid grid-cols-2 gap-4 hidden">
-            <button id="add-button" class="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-green-600 transition-all duration-200">Add to Total</button>
-            <button id="reset-button" class="w-full bg-red-500 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-red-600 transition-all duration-200">Reset All</button>
         </div>
 
         <!-- Instructions -->
@@ -89,8 +77,8 @@
             <ul class="list-disc list-inside text-sm mt-2">
                 <li>Use a plain, light-colored background.</li>
                 <li>Ensure good, even lighting without harsh shadows.</li>
-                <li>Scan one domino at a time, holding it steady.</li>
-                <li>The AI is looking for dot-like shapes.</li>
+                <li>Hold the domino steady to get a clear count.</li>
+                <li>The AI is looking for small, round shapes.</li>
             </ul>
         </div>
     </div>
@@ -99,82 +87,85 @@
     // DOM Element References
     const video = document.getElementById('video');
     const startButton = document.getElementById('start-button');
-    const scanButton = document.getElementById('scan-button');
-    const addButton = document.getElementById('add-button');
-    const resetButton = document.getElementById('reset-button');
+    const stopButton = document.getElementById('stop-button');
     const loadingOverlay = document.getElementById('loading-overlay');
     const loadingText = document.getElementById('loading-text');
     
     const overlayCanvas = document.getElementById('overlay-canvas');
     const overlayCtx = overlayCanvas.getContext('2d');
 
-    const currentCountEl = document.getElementById('current-count');
-    const totalScoreEl = document.getElementById('total-score');
+    const countDisplay = document.getElementById('count-display');
+    const pipCountEl = document.getElementById('pip-count');
     
-    const resultsSection = document.getElementById('results-section');
-    const actionsSection = document.getElementById('actions-section');
-
     // App State
-    let currentScanValue = 0;
-    let totalScore = 0;
     let model = null; // To hold the loaded AI model
+    let isDetecting = false;
+    let animationFrameId = null;
 
     // --- Event Listeners ---
-    startButton.addEventListener('click', setupApp);
-    scanButton.addEventListener('click', scanDomino);
-    
-    addButton.addEventListener('click', () => {
-        totalScore += currentScanValue;
-        currentScanValue = 0;
-        updateUI();
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    });
-
-    resetButton.addEventListener('click', () => {
-        currentScanValue = 0;
-        totalScore = 0;
-        updateUI();
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    });
+    startButton.addEventListener('click', startApp);
+    stopButton.addEventListener('click', stopApp);
 
     // --- Core Functions ---
-    async function setupApp() {
+    async function startApp() {
         loadingOverlay.classList.remove('hidden');
         loadingOverlay.classList.add('flex');
         startButton.disabled = true;
         startButton.classList.add('opacity-50');
 
-        // Step 1: Start the camera
+        // Step 1: Load the AI model if it's not already loaded
+        if (!model) {
+            loadingText.textContent = "Loading AI Model...";
+            try {
+                model = await cocoSsd.load();
+            } catch (err) {
+                console.error("Failed to load model", err);
+                alert("Failed to load the AI model. Please check your internet connection and try again.");
+                stopApp(); // Reset UI
+                return;
+            }
+        }
+
+        // Step 2: Start the camera
         loadingText.textContent = "Starting Camera...";
         const stream = await startCamera();
         if (!stream) {
-            // Handle camera start failure
-            loadingOverlay.classList.add('hidden');
-            startButton.disabled = false;
-            startButton.classList.remove('opacity-50');
+            stopApp(); // Reset UI on failure
             return;
         }
 
-        // Step 2: Load the AI model
-        loadingText.textContent = "Loading AI Model...";
-        try {
-            model = await cocoSsd.load();
-        } catch (err) {
-            console.error("Failed to load model", err);
-            alert("Failed to load the AI model. Please check your internet connection and try again.");
-            loadingOverlay.classList.add('hidden');
-            startButton.disabled = false;
-            startButton.classList.remove('opacity-50');
-            return;
-        }
-
-        // Step 3: Finalize UI
+        // Step 3: Finalize UI and start detection loop
         startButton.classList.add('hidden');
-        scanButton.classList.remove('hidden');
-        resultsSection.classList.remove('hidden');
-        actionsSection.classList.remove('hidden');
+        stopButton.classList.remove('hidden');
+        countDisplay.classList.remove('hidden');
         loadingOverlay.classList.add('hidden');
         loadingOverlay.classList.remove('flex');
+
+        isDetecting = true;
+        detectLoop();
+    }
+
+    function stopApp() {
+        isDetecting = false;
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+
+        // Stop the camera stream
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+            video.srcObject = null;
+        }
+        
+        // Reset UI
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        pipCountEl.textContent = '0';
+        countDisplay.classList.add('hidden');
+        stopButton.classList.add('hidden');
+        startButton.classList.remove('hidden');
+        startButton.disabled = false;
+        startButton.classList.remove('opacity-50');
     }
 
     async function startCamera() {
@@ -186,7 +177,6 @@
             return new Promise(resolve => {
                 video.onloadedmetadata = () => {
                     video.play();
-                    // Set canvas sizes to match video dimensions
                     overlayCanvas.width = video.videoWidth;
                     overlayCanvas.height = video.videoHeight;
                     resolve(stream);
@@ -199,45 +189,32 @@
         }
     }
 
-    function updateUI() {
-        currentCountEl.textContent = currentScanValue;
-        totalScoreEl.textContent = totalScore;
-    }
-    
-    async function scanDomino() {
-        if (!model || !video.srcObject) {
-            alert("AI Model or Camera not ready.");
-            return;
-        }
+    async function detectLoop() {
+        if (!isDetecting) return;
 
-        try {
-            // 1. Use the AI model to detect objects in the video frame
-            const predictions = await model.detect(video);
+        // 1. Use the AI model to detect objects in the video frame
+        const predictions = await model.detect(video);
 
-            // 2. Filter predictions to find likely domino dots
-            // We'll accept any small object with a high confidence score.
-            // The aspect ratio check helps ensure we get dot-like shapes.
-            const detectedDots = predictions.filter(p => {
-                const [x, y, width, height] = p.bbox;
-                const aspectRatio = width / height;
-                return p.score > 0.65 && aspectRatio > 0.7 && aspectRatio < 1.3;
-            });
+        // 2. Filter predictions to find likely domino dots
+        const detectedDots = predictions.filter(p => {
+            const [x, y, width, height] = p.bbox;
+            const aspectRatio = width / height;
+            // Loosening the confidence requirement slightly can help in varied lighting
+            return p.score > 0.60 && aspectRatio > 0.7 && aspectRatio < 1.3;
+        });
 
-            // 3. Update application state and UI
-            currentScanValue = detectedDots.length;
-            updateUI();
+        // 3. Update UI with the count
+        pipCountEl.textContent = detectedDots.length;
 
-            // 4. Draw detection boxes on the overlay canvas
-            drawDetections(detectedDots);
+        // 4. Draw detection circles on the overlay canvas
+        drawDetections(detectedDots);
 
-        } catch (e) {
-            console.error("AI Prediction Error:", e);
-            alert("An error occurred while scanning the image. Please try again.");
-        }
+        // 5. Request the next frame
+        animationFrameId = requestAnimationFrame(detectLoop);
     }
 
     /**
-     * Draws bounding boxes on the overlay canvas to mark detected dots.
+     * Draws circles on the overlay canvas to mark detected dots.
      * @param {Array} predictions - An array of prediction objects from the AI model.
      */
     function drawDetections(predictions) {
@@ -245,22 +222,18 @@
         
         predictions.forEach(prediction => {
             const [x, y, width, height] = prediction.bbox;
-            const text = `${(prediction.score * 100).toFixed(1)}%`;
+            const centerX = x + width / 2;
+            const centerY = y + height / 2;
+            const radius = (width + height) / 4;
 
-            // Bounding box
-            overlayCtx.strokeStyle = '#2ecc71'; // A nice green
+            // Draw the circle
+            overlayCtx.beginPath();
+            overlayCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+            overlayCtx.fillStyle = 'rgba(46, 204, 113, 0.3)'; // Semi-transparent green fill
+            overlayCtx.fill();
+            overlayCtx.strokeStyle = 'rgba(46, 204, 113, 0.8)'; // Solid green border
             overlayCtx.lineWidth = 2;
-            overlayCtx.strokeRect(x, y, width, height);
-
-            // Text background
-            overlayCtx.fillStyle = '#2ecc71';
-            const textWidth = overlayCtx.measureText(text).width;
-            overlayCtx.fillRect(x, y, textWidth + 8, 20);
-
-            // Text
-            overlayCtx.fillStyle = '#ffffff';
-            overlayCtx.font = '14px Inter';
-            overlayCtx.fillText(text, x + 4, y + 14);
+            overlayCtx.stroke();
         });
     }
 </script>
