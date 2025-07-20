@@ -6,6 +6,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <title>Domino Counter AI</title>
+    <!-- Load TensorFlow.js and the COCO-SSD model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -47,14 +51,14 @@
             <canvas id="overlay-canvas" class="absolute top-0 left-0 w-full h-full"></canvas>
             <div id="loading-overlay" class="absolute inset-0 bg-gray-900 bg-opacity-75 flex-col items-center justify-center hidden">
                 <div class="loader"></div>
-                <p class="text-white mt-4">Starting Camera...</p>
+                <p id="loading-text" class="text-white mt-4">Starting Camera...</p>
             </div>
         </div>
 
         <!-- Controls Section -->
         <div id="controls-section">
             <button id="start-button" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none">
-                Start Camera
+                Start Camera & Load AI
             </button>
             <button id="scan-button" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none hidden">
                 Scan Domino
@@ -86,13 +90,10 @@
                 <li>Use a plain, light-colored background.</li>
                 <li>Ensure good, even lighting without harsh shadows.</li>
                 <li>Scan one domino at a time, holding it steady.</li>
-                <li>Fill the frame with the domino for accuracy.</li>
+                <li>The AI is looking for dot-like shapes.</li>
             </ul>
         </div>
     </div>
-
-    <!-- Hidden canvas for processing -->
-    <canvas id="hidden-canvas" style="display:none;"></canvas>
 
 <script>
     // DOM Element References
@@ -102,10 +103,9 @@
     const addButton = document.getElementById('add-button');
     const resetButton = document.getElementById('reset-button');
     const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText = document.getElementById('loading-text');
     
-    const hiddenCanvas = document.getElementById('hidden-canvas');
     const overlayCanvas = document.getElementById('overlay-canvas');
-    const hiddenCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
     const overlayCtx = overlayCanvas.getContext('2d');
 
     const currentCountEl = document.getElementById('current-count');
@@ -117,9 +117,10 @@
     // App State
     let currentScanValue = 0;
     let totalScore = 0;
+    let model = null; // To hold the loaded AI model
 
     // --- Event Listeners ---
-    startButton.addEventListener('click', startCamera);
+    startButton.addEventListener('click', setupApp);
     scanButton.addEventListener('click', scanDomino);
     
     addButton.addEventListener('click', () => {
@@ -137,40 +138,64 @@
     });
 
     // --- Core Functions ---
-    async function startCamera() {
+    async function setupApp() {
         loadingOverlay.classList.remove('hidden');
         loadingOverlay.classList.add('flex');
         startButton.disabled = true;
+        startButton.classList.add('opacity-50');
 
+        // Step 1: Start the camera
+        loadingText.textContent = "Starting Camera...";
+        const stream = await startCamera();
+        if (!stream) {
+            // Handle camera start failure
+            loadingOverlay.classList.add('hidden');
+            startButton.disabled = false;
+            startButton.classList.remove('opacity-50');
+            return;
+        }
+
+        // Step 2: Load the AI model
+        loadingText.textContent = "Loading AI Model...";
+        try {
+            model = await cocoSsd.load();
+        } catch (err) {
+            console.error("Failed to load model", err);
+            alert("Failed to load the AI model. Please check your internet connection and try again.");
+            loadingOverlay.classList.add('hidden');
+            startButton.disabled = false;
+            startButton.classList.remove('opacity-50');
+            return;
+        }
+
+        // Step 3: Finalize UI
+        startButton.classList.add('hidden');
+        scanButton.classList.remove('hidden');
+        resultsSection.classList.remove('hidden');
+        actionsSection.classList.remove('hidden');
+        loadingOverlay.classList.add('hidden');
+        loadingOverlay.classList.remove('flex');
+    }
+
+    async function startCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment' } // Prefer rear camera
             });
             video.srcObject = stream;
-            video.onloadedmetadata = () => {
-                video.play();
-                // Set canvas sizes to match video dimensions
-                const w = video.videoWidth;
-                const h = video.videoHeight;
-                overlayCanvas.width = w;
-                overlayCanvas.height = h;
-                hiddenCanvas.width = w;
-                hiddenCanvas.height = h;
-
-                // UI transition
-                startButton.classList.add('hidden');
-                scanButton.classList.remove('hidden');
-                resultsSection.classList.remove('hidden');
-                actionsSection.classList.remove('hidden');
-                loadingOverlay.classList.add('hidden');
-                loadingOverlay.classList.remove('flex');
-            };
+            return new Promise(resolve => {
+                video.onloadedmetadata = () => {
+                    video.play();
+                    // Set canvas sizes to match video dimensions
+                    overlayCanvas.width = video.videoWidth;
+                    overlayCanvas.height = video.videoHeight;
+                    resolve(stream);
+                };
+            });
         } catch (err) {
             console.error("Camera Error:", err);
             alert('Could not access the camera. Please ensure you grant permission and are using a secure (https) connection.');
-            loadingOverlay.classList.add('hidden');
-            loadingOverlay.classList.remove('flex');
-            startButton.disabled = false;
+            return null;
         }
     }
 
@@ -179,163 +204,64 @@
         totalScoreEl.textContent = totalScore;
     }
     
-    function scanDomino() {
-        if (!video.srcObject) {
-            alert("Camera not started.");
+    async function scanDomino() {
+        if (!model || !video.srcObject) {
+            alert("AI Model or Camera not ready.");
             return;
         }
 
-        // Ensure canvas dimensions are up-to-date
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-        hiddenCanvas.width = w;
-        hiddenCanvas.height = h;
-        overlayCanvas.width = w;
-        overlayCanvas.height = h;
-
-        // 1. Capture a frame from the video onto the hidden canvas
-        // NOTE: We do NOT mirror the context for drawing, so the image is processed in its natural orientation.
-        hiddenCtx.drawImage(video, 0, 0, w, h);
-        
         try {
-            // 2. Get image data and process it
-            const imageData = hiddenCtx.getImageData(0, 0, w, h);
-            const binaryData = processImageToBinary(imageData);
+            // 1. Use the AI model to detect objects in the video frame
+            const predictions = await model.detect(video);
 
-            // 3. Use blob detection to find dots and their locations
-            const detectedBlobs = findBlobs(binaryData, w, h);
+            // 2. Filter predictions to find likely domino dots
+            // We'll accept any small object with a high confidence score.
+            // The aspect ratio check helps ensure we get dot-like shapes.
+            const detectedDots = predictions.filter(p => {
+                const [x, y, width, height] = p.bbox;
+                const aspectRatio = width / height;
+                return p.score > 0.65 && aspectRatio > 0.7 && aspectRatio < 1.3;
+            });
 
-            // 4. Update application state and UI
-            currentScanValue = detectedBlobs.length;
+            // 3. Update application state and UI
+            currentScanValue = detectedDots.length;
             updateUI();
 
-            // 5. Draw detection circles on the overlay canvas
-            drawDetections(detectedBlobs);
+            // 4. Draw detection boxes on the overlay canvas
+            drawDetections(detectedDots);
 
         } catch (e) {
-            console.error("Image Processing Error:", e);
+            console.error("AI Prediction Error:", e);
             alert("An error occurred while scanning the image. Please try again.");
         }
     }
 
     /**
-     * Draws circles on the overlay canvas to mark detected dots.
-     * @param {Array} blobs - An array of blob objects with x, y, and size properties.
+     * Draws bounding boxes on the overlay canvas to mark detected dots.
+     * @param {Array} predictions - An array of prediction objects from the AI model.
      */
-    function drawDetections(blobs) {
+    function drawDetections(predictions) {
         overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-        overlayCtx.strokeStyle = 'rgba(76, 217, 100, 0.9)'; // A nice green color
-        overlayCtx.fillStyle = 'rgba(76, 217, 100, 0.4)';
-        overlayCtx.lineWidth = 3;
+        
+        predictions.forEach(prediction => {
+            const [x, y, width, height] = prediction.bbox;
+            const text = `${(prediction.score * 100).toFixed(1)}%`;
 
-        blobs.forEach(blob => {
-            overlayCtx.beginPath();
-            // Calculate radius based on the size of the blob for better visualization
-            const radius = Math.sqrt(blob.size / Math.PI) * 1.5;
-            overlayCtx.arc(blob.x, blob.y, radius, 0, 2 * Math.PI);
-            overlayCtx.fill();
-            overlayCtx.stroke();
+            // Bounding box
+            overlayCtx.strokeStyle = '#2ecc71'; // A nice green
+            overlayCtx.lineWidth = 2;
+            overlayCtx.strokeRect(x, y, width, height);
+
+            // Text background
+            overlayCtx.fillStyle = '#2ecc71';
+            const textWidth = overlayCtx.measureText(text).width;
+            overlayCtx.fillRect(x, y, textWidth + 8, 20);
+
+            // Text
+            overlayCtx.fillStyle = '#ffffff';
+            overlayCtx.font = '14px Inter';
+            overlayCtx.fillText(text, x + 4, y + 14);
         });
-    }
-
-    // --- Image Processing & "AI" Logic ---
-
-    function processImageToBinary(imageData) {
-        const data = imageData.data;
-        const grayData = new Uint8ClampedArray(data.length);
-        const histogram = new Array(256).fill(0);
-
-        for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-            grayData[i] = grayData[i + 1] = grayData[i + 2] = gray;
-            grayData[i + 3] = 255;
-            histogram[gray]++;
-        }
-
-        let total = imageData.width * imageData.height;
-        let sum = 0;
-        for (let t = 0; t < 256; t++) sum += t * histogram[t];
-        let sumB = 0, wB = 0, wF = 0, mB, mF, max = 0, threshold = 0;
-        for (let t = 0; t < 256; t++) {
-            wB += histogram[t];
-            if (wB === 0) continue;
-            wF = total - wB;
-            if (wF === 0) break;
-            sumB += t * histogram[t];
-            mB = sumB / wB;
-            mF = (sum - sumB) / wF;
-            let between = wB * wF * (mB - mF) * (mB - mF);
-            if (between > max) {
-                max = between;
-                threshold = t;
-            }
-        }
-        
-        const binary = { data: new Uint8ClampedArray(data.length), width: imageData.width, height: imageData.height };
-        for (let i = 0; i < grayData.length; i += 4) {
-            const value = grayData[i] < threshold ? 0 : 255;
-            binary.data[i] = binary.data[i + 1] = binary.data[i + 2] = value;
-            binary.data[i + 3] = 255;
-        }
-        return binary;
-    }
-
-    /**
-     * Finds connected components (blobs) and returns their locations and sizes.
-     * @returns {Array} An array of objects, each representing a detected dot.
-     */
-    function findBlobs(binaryData, width, height) {
-        const data = binaryData.data;
-        const visited = new Array(width * height).fill(false);
-        const foundBlobs = [];
-        
-        const totalPixels = width * height;
-        const minBlobSize = Math.max(20, Math.round(totalPixels * 0.0003));
-        const maxBlobSize = Math.round(totalPixels * 0.03);
-
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const index = (y * width + x);
-                if (data[index * 4] === 0 && !visited[index]) {
-                    let blobSize = 0;
-                    let sumX = 0;
-                    let sumY = 0;
-                    const queue = [[x, y]];
-                    visited[index] = true;
-                    
-                    while (queue.length > 0) {
-                        const [cx, cy] = queue.shift();
-                        blobSize++;
-                        sumX += cx;
-                        sumY += cy;
-
-                        for (let ny = cy - 1; ny <= cy + 1; ny++) {
-                            for (let nx = cx - 1; nx <= cx + 1; nx++) {
-                                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                                    const nIndex = (ny * width + nx);
-                                    if (data[nIndex * 4] === 0 && !visited[nIndex]) {
-                                        visited[nIndex] = true;
-                                        queue.push([nx, ny]);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (blobSize > minBlobSize && blobSize < maxBlobSize) {
-                        foundBlobs.push({
-                            x: sumX / blobSize, // Center of mass X
-                            y: sumY / blobSize, // Center of mass Y
-                            size: blobSize
-                        });
-                    }
-                }
-            }
-        }
-        return foundBlobs;
     }
 </script>
 </body>
