@@ -12,10 +12,6 @@
         body {
             font-family: 'Inter', sans-serif;
         }
-        /* Style for the video stream to make it look like a camera viewfinder */
-        #video {
-            transform: scaleX(-1); /* Mirror the camera feed */
-        }
         /* Custom focus-visible styles for better accessibility */
         button:focus-visible, input:focus-visible {
             outline: 2px solid #4f46e5;
@@ -48,15 +44,11 @@
         <!-- Camera and Canvas Section -->
         <div id="video-container" class="relative bg-gray-900 rounded-lg overflow-hidden border-2 border-gray-200">
             <video id="video" playsinline autoplay muted class="w-full h-auto block"></video>
+            <canvas id="overlay-canvas" class="absolute top-0 left-0 w-full h-full"></canvas>
             <div id="loading-overlay" class="absolute inset-0 bg-gray-900 bg-opacity-75 flex-col items-center justify-center hidden">
                 <div class="loader"></div>
                 <p class="text-white mt-4">Starting Camera...</p>
             </div>
-        </div>
-
-        <!-- Processed Image Feedback -->
-        <div id="processed-container" class="bg-gray-200 rounded-lg overflow-hidden hidden">
-             <canvas id="processed-canvas" class="w-full h-auto block"></canvas>
         </div>
 
         <!-- Controls Section -->
@@ -112,10 +104,9 @@
     const loadingOverlay = document.getElementById('loading-overlay');
     
     const hiddenCanvas = document.getElementById('hidden-canvas');
-    const processedCanvas = document.getElementById('processed-canvas');
-    const processedContainer = document.getElementById('processed-container');
+    const overlayCanvas = document.getElementById('overlay-canvas');
     const hiddenCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
-    const processedCtx = processedCanvas.getContext('2d');
+    const overlayCtx = overlayCanvas.getContext('2d');
 
     const currentCountEl = document.getElementById('current-count');
     const totalScoreEl = document.getElementById('total-score');
@@ -135,17 +126,14 @@
         totalScore += currentScanValue;
         currentScanValue = 0;
         updateUI();
-        // Clear the processed canvas for the next scan
-        processedCtx.clearRect(0, 0, processedCanvas.width, processedCanvas.height);
-        processedContainer.classList.add('hidden');
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     });
 
     resetButton.addEventListener('click', () => {
         currentScanValue = 0;
         totalScore = 0;
         updateUI();
-        processedCtx.clearRect(0, 0, processedCanvas.width, processedCanvas.height);
-        processedContainer.classList.add('hidden');
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     });
 
     // --- Core Functions ---
@@ -161,6 +149,14 @@
             video.srcObject = stream;
             video.onloadedmetadata = () => {
                 video.play();
+                // Set canvas sizes to match video dimensions
+                const w = video.videoWidth;
+                const h = video.videoHeight;
+                overlayCanvas.width = w;
+                overlayCanvas.height = h;
+                hiddenCanvas.width = w;
+                hiddenCanvas.height = h;
+
                 // UI transition
                 startButton.classList.add('hidden');
                 scanButton.classList.remove('hidden');
@@ -189,15 +185,16 @@
             return;
         }
 
-        // Match canvas dimensions to the video's intrinsic size
+        // Ensure canvas dimensions are up-to-date
         const w = video.videoWidth;
         const h = video.videoHeight;
         hiddenCanvas.width = w;
         hiddenCanvas.height = h;
-        processedCanvas.width = w;
-        processedCanvas.height = h;
+        overlayCanvas.width = w;
+        overlayCanvas.height = h;
 
         // 1. Capture a frame from the video onto the hidden canvas
+        // NOTE: We do NOT mirror the context for drawing, so the image is processed in its natural orientation.
         hiddenCtx.drawImage(video, 0, 0, w, h);
         
         try {
@@ -205,17 +202,15 @@
             const imageData = hiddenCtx.getImageData(0, 0, w, h);
             const binaryData = processImageToBinary(imageData);
 
-            // 3. Use blob detection to count the dots
-            const dotCount = countBlobs(binaryData, w, h);
+            // 3. Use blob detection to find dots and their locations
+            const detectedBlobs = findBlobs(binaryData, w, h);
 
             // 4. Update application state and UI
-            currentScanValue = dotCount;
+            currentScanValue = detectedBlobs.length;
             updateUI();
 
-            // 5. Display the processed black & white image for user feedback
-            const processedImageData = new ImageData(new Uint8ClampedArray(binaryData.data), w, h);
-            processedCtx.putImageData(processedImageData, 0, 0);
-            processedContainer.classList.remove('hidden');
+            // 5. Draw detection circles on the overlay canvas
+            drawDetections(detectedBlobs);
 
         } catch (e) {
             console.error("Image Processing Error:", e);
@@ -223,43 +218,47 @@
         }
     }
 
+    /**
+     * Draws circles on the overlay canvas to mark detected dots.
+     * @param {Array} blobs - An array of blob objects with x, y, and size properties.
+     */
+    function drawDetections(blobs) {
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        overlayCtx.strokeStyle = 'rgba(76, 217, 100, 0.9)'; // A nice green color
+        overlayCtx.fillStyle = 'rgba(76, 217, 100, 0.4)';
+        overlayCtx.lineWidth = 3;
+
+        blobs.forEach(blob => {
+            overlayCtx.beginPath();
+            // Calculate radius based on the size of the blob for better visualization
+            const radius = Math.sqrt(blob.size / Math.PI) * 1.5;
+            overlayCtx.arc(blob.x, blob.y, radius, 0, 2 * Math.PI);
+            overlayCtx.fill();
+            overlayCtx.stroke();
+        });
+    }
+
     // --- Image Processing & "AI" Logic ---
 
-    /**
-     * Converts an image to grayscale and then to a binary (black/white) image
-     * based on a dynamic threshold. This is the key step to isolate dots.
-     * @param {ImageData} imageData - The raw image data from the canvas.
-     * @returns {object} An object containing the binary image data and dimensions.
-     */
     function processImageToBinary(imageData) {
         const data = imageData.data;
         const grayData = new Uint8ClampedArray(data.length);
         const histogram = new Array(256).fill(0);
 
-        // First pass: convert to grayscale and build histogram
         for (let i = 0; i < data.length; i += 4) {
             const r = data[i];
             const g = data[i + 1];
             const b = data[i + 2];
-            // Using the luminosity method for better grayscale representation
             const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
             grayData[i] = grayData[i + 1] = grayData[i + 2] = gray;
             grayData[i + 3] = 255;
             histogram[gray]++;
         }
 
-        // Otsu's method to find an optimal dynamic threshold
         let total = imageData.width * imageData.height;
         let sum = 0;
         for (let t = 0; t < 256; t++) sum += t * histogram[t];
-
-        let sumB = 0;
-        let wB = 0;
-        let wF = 0;
-        let mB, mF;
-        let max = 0;
-        let threshold = 0;
-
+        let sumB = 0, wB = 0, wF = 0, mB, mF, max = 0, threshold = 0;
         for (let t = 0; t < 256; t++) {
             wB += histogram[t];
             if (wB === 0) continue;
@@ -275,11 +274,9 @@
             }
         }
         
-        // Second pass: apply threshold to create binary image
         const binary = { data: new Uint8ClampedArray(data.length), width: imageData.width, height: imageData.height };
         for (let i = 0; i < grayData.length; i += 4) {
-            // We are looking for dark dots on a light background
-            const value = grayData[i] < threshold ? 0 : 255; // 0 for black (dots), 255 for white
+            const value = grayData[i] < threshold ? 0 : 255;
             binary.data[i] = binary.data[i + 1] = binary.data[i + 2] = value;
             binary.data[i + 3] = 255;
         }
@@ -287,37 +284,34 @@
     }
 
     /**
-     * Counts connected components (blobs) in a binary image. This is our dot counter.
-     * @param {object} binaryData - The binary image data object.
-     * @param {number} width - The width of the image.
-     * @param {number} height - The height of the image.
-     * @returns {number} The count of valid dots found.
+     * Finds connected components (blobs) and returns their locations and sizes.
+     * @returns {Array} An array of objects, each representing a detected dot.
      */
-    function countBlobs(binaryData, width, height) {
+    function findBlobs(binaryData, width, height) {
         const data = binaryData.data;
         const visited = new Array(width * height).fill(false);
-        let blobCount = 0;
+        const foundBlobs = [];
         
-        // Dynamic blob size filtering based on image resolution
         const totalPixels = width * height;
-        const minBlobSize = Math.max(20, Math.round(totalPixels * 0.0003)); // Filter out noise
-        const maxBlobSize = Math.round(totalPixels * 0.03);   // Filter out large non-domino objects
+        const minBlobSize = Math.max(20, Math.round(totalPixels * 0.0003));
+        const maxBlobSize = Math.round(totalPixels * 0.03);
 
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const index = (y * width + x);
-                // Check for a black pixel (potential dot) that hasn't been visited yet
                 if (data[index * 4] === 0 && !visited[index]) {
                     let blobSize = 0;
-                    const queue = [[x, y]]; // Queue for Breadth-First Search (BFS)
+                    let sumX = 0;
+                    let sumY = 0;
+                    const queue = [[x, y]];
                     visited[index] = true;
                     
-                    // Start BFS to find the size of the connected component
                     while (queue.length > 0) {
                         const [cx, cy] = queue.shift();
                         blobSize++;
+                        sumX += cx;
+                        sumY += cy;
 
-                        // Check 8 neighboring pixels
                         for (let ny = cy - 1; ny <= cy + 1; ny++) {
                             for (let nx = cx - 1; nx <= cx + 1; nx++) {
                                 if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
@@ -331,14 +325,17 @@
                         }
                     }
 
-                    // If the blob size is within our defined range, it's a valid dot
                     if (blobSize > minBlobSize && blobSize < maxBlobSize) {
-                        blobCount++;
+                        foundBlobs.push({
+                            x: sumX / blobSize, // Center of mass X
+                            y: sumY / blobSize, // Center of mass Y
+                            size: blobSize
+                        });
                     }
                 }
             }
         }
-        return blobCount;
+        return foundBlobs;
     }
 </script>
 </body>
