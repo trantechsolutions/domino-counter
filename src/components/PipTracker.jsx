@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 const API_KEY = 'EXjabT4BycjIXdEm4r3V'; // Replace with your actual Roboflow API key
-const MODEL_NAME = 'double-twelve-dominoes';
+const MODEL_NAME = 'double-twelve-dominoes-lmkit';
 const MODEL_VERSION = 2;
 const DETECT_URL = `https://detect.roboflow.com/${MODEL_NAME}/${MODEL_VERSION}`;
 
