@@ -10,9 +10,33 @@ const PIP_COLORS = [
   '#d946ef', '#7c3aed', '#06b6d4', '#ec4899', '#2563eb', '#dc2626',
 ];
 
+// IoU (Intersection over Union) for NMS
+function calculateIoU(a, b) {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.w, b.x + b.w);
+  const y2 = Math.min(a.y + a.h, b.y + b.h);
+  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const areaA = a.w * a.h;
+  const areaB = b.w * b.h;
+  const union = areaA + areaB - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+// Non-Maximum Suppression — keep only the best detection per region
+function nms(boxes, iouThreshold = 0.4) {
+  const sorted = [...boxes].sort((a, b) => b.confidence - a.confidence);
+  const keep = [];
+  for (const box of sorted) {
+    const dominated = keep.some((kept) => calculateIoU(box, kept) > iouThreshold);
+    if (!dominated) keep.push(box);
+  }
+  return keep;
+}
+
 async function detectDominoes(canvas) {
   const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-  const res = await fetch(`${DETECT_URL}?api_key=${API_KEY}&confidence=25&overlap=30`, {
+  const res = await fetch(`${DETECT_URL}?api_key=${API_KEY}&confidence=40&overlap=25`, {
     method: 'POST',
     body: base64,
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -22,7 +46,17 @@ async function detectDominoes(canvas) {
     throw new Error(`API error ${res.status}: ${text || res.statusText}`);
   }
   const data = await res.json();
-  return data.predictions || [];
+  const predictions = data.predictions || [];
+
+  // Convert to {x, y, w, h} format and apply client-side NMS
+  const boxes = predictions.map((p) => ({
+    ...p,
+    x: p.x - p.width / 2,
+    y: p.y - p.height / 2,
+    w: p.width,
+    h: p.height,
+  }));
+  return nms(boxes);
 }
 
 export default function PipTracker({ gameData, onApplyScore }) {
@@ -124,10 +158,10 @@ export default function PipTracker({ gameData, onApplyScore }) {
           id: i,
           pipValue,
           confidence: p.confidence,
-          x: p.x - p.width / 2,
-          y: p.y - p.height / 2,
-          w: p.width,
-          h: p.height,
+          x: p.x,
+          y: p.y,
+          w: p.w,
+          h: p.h,
           color: PIP_COLORS[pipValue % PIP_COLORS.length],
         };
       });
