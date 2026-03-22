@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { db, doc, updateDoc, arrayUnion } from '../lib/firebase';
-import { PlayerIcon, GoldMedalIcon } from './Icons';
+import { db, doc, updateDoc, arrayUnion, deleteDoc } from '../lib/firebase';
+import { PlayerIcon, GoldMedalIcon, TrophyIcon, LockIcon } from './Icons';
 
 export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onScoreChange, onSubmitScores }) {
   const [newPlayer, setNewPlayer] = useState('');
@@ -8,6 +8,8 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
   const [editNameValue, setEditNameValue] = useState('');
   const [editingScore, setEditingScore] = useState(null);
   const [editScoreValue, setEditScoreValue] = useState('');
+
+  const isFinished = gameData?.finished || false;
 
   const rankedPlayers = useMemo(() => {
     if (!gameData?.players) return [];
@@ -39,6 +41,7 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
   };
 
   const startEditName = (player) => {
+    if (isFinished) return;
     setEditingName(player.id);
     setEditNameValue(player.name);
   };
@@ -56,6 +59,7 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
   };
 
   const startEditScore = (roundIndex, playerId, currentValue) => {
+    if (isFinished) return;
     setEditingScore({ roundIndex, playerId });
     setEditScoreValue(String(currentValue ?? 0));
   };
@@ -76,6 +80,31 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
     setEditingScore(null);
   };
 
+  const handleEndGame = async () => {
+    if (rankedPlayers.length === 0) return;
+    const winnerName = rankedPlayers[0].name;
+    if (!confirm(`End game and crown ${winnerName} as the winner?`)) return;
+    await updateDoc(doc(db, 'dominoGames', gameId), {
+      finished: true,
+      winner: winnerName,
+      finishedAt: new Date(),
+    });
+  };
+
+  const handleReopenGame = async () => {
+    await updateDoc(doc(db, 'dominoGames', gameId), {
+      finished: false,
+      winner: null,
+      finishedAt: null,
+    });
+  };
+
+  const handleDeleteGame = async () => {
+    if (!confirm(`Delete game ${gameId}? This cannot be undone.`)) return;
+    await deleteDoc(doc(db, 'dominoGames', gameId));
+    onLeaveGame();
+  };
+
   if (!gameData) {
     return (
       <div className="text-center p-8">
@@ -86,41 +115,85 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
 
   return (
     <div className="space-y-4">
+      {/* Winner banner */}
+      {isFinished && (
+        <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 p-4 sm:p-5 rounded-xl text-center">
+          <TrophyIcon className="w-8 h-8 text-yellow-500 mx-auto mb-1" />
+          <h2 className="text-lg font-extrabold text-yellow-800">
+            {gameData.winner} wins!
+          </h2>
+          <p className="text-xs text-yellow-600 mt-1 flex items-center justify-center gap-1">
+            <LockIcon className="w-3 h-3" />
+            Game finished
+          </p>
+        </div>
+      )}
+
       {/* Game header */}
       <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-sm text-gray-500">Game</span>
           <span className="font-mono font-bold text-indigo-600 tracking-wider">{gameId}</span>
+          {isFinished && <LockIcon className="text-yellow-500" />}
         </div>
-        <button
-          onClick={onLeaveGame}
-          className="text-sm text-red-600 font-semibold py-1.5 px-3 rounded-lg hover:bg-red-50 active:bg-red-100 transition shrink-0"
-        >
-          Leave
-        </button>
-      </div>
-
-      {/* Add player */}
-      <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
-        <form onSubmit={handleAddPlayer} className="flex gap-2">
-          <input
-            type="text"
-            value={newPlayer}
-            onChange={(e) => setNewPlayer(e.target.value)}
-            placeholder="Add player..."
-            className="flex-1 min-w-0 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
-          />
+        <div className="flex items-center gap-2 shrink-0">
+          {isFinished ? (
+            <button
+              onClick={handleReopenGame}
+              className="text-sm text-indigo-600 font-semibold py-1.5 px-3 rounded-lg hover:bg-indigo-50 active:bg-indigo-100 transition"
+            >
+              Reopen
+            </button>
+          ) : rankedPlayers.length > 0 && gameData.rounds.length > 0 ? (
+            <button
+              onClick={handleEndGame}
+              className="text-sm text-yellow-700 font-semibold py-1.5 px-3 rounded-lg hover:bg-yellow-50 active:bg-yellow-100 transition flex items-center gap-1"
+            >
+              <TrophyIcon className="w-4 h-4" />
+              End Game
+            </button>
+          ) : null}
           <button
-            type="submit"
-            disabled={!newPlayer.trim()}
-            className="bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition disabled:opacity-50 shrink-0"
+            onClick={handleDeleteGame}
+            className="text-sm text-red-400 font-semibold py-1.5 px-3 rounded-lg hover:bg-red-50 hover:text-red-600 active:bg-red-100 transition"
+            title="Delete game"
           >
-            Add
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
           </button>
-        </form>
+          <button
+            onClick={onLeaveGame}
+            className="text-sm text-gray-500 font-semibold py-1.5 px-3 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition"
+          >
+            Leave
+          </button>
+        </div>
       </div>
 
-      {/* Scoreboard table - horizontal scroll on mobile */}
+      {/* Add player - only when game is active */}
+      {!isFinished && (
+        <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
+          <form onSubmit={handleAddPlayer} className="flex gap-2">
+            <input
+              type="text"
+              value={newPlayer}
+              onChange={(e) => setNewPlayer(e.target.value)}
+              placeholder="Add player..."
+              className="flex-1 min-w-0 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
+            />
+            <button
+              type="submit"
+              disabled={!newPlayer.trim()}
+              className="bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition disabled:opacity-50 shrink-0"
+            >
+              Add
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Scoreboard table */}
       {rankedPlayers.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="-mx-[1px] overflow-x-auto">
@@ -139,10 +212,14 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {rankedPlayers.map((player) => (
-                  <tr key={player.id} className="hover:bg-gray-50/50">
+                  <tr key={player.id} className={`hover:bg-gray-50/50 ${
+                    isFinished && player.rank === 1 ? 'bg-yellow-50/50' : ''
+                  }`}>
                     <td className="py-3 px-3 text-center">
                       {player.rank === 1 ? (
-                        <span className="inline-flex justify-center"><GoldMedalIcon /></span>
+                        <span className="inline-flex justify-center">
+                          {isFinished ? <TrophyIcon className="text-yellow-500" /> : <GoldMedalIcon />}
+                        </span>
                       ) : (
                         <span className="text-gray-400 font-semibold">{player.rank}</span>
                       )}
@@ -163,13 +240,22 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
                       ) : (
                         <button
                           onClick={() => startEditName(player)}
-                          className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors group text-left"
+                          disabled={isFinished}
+                          className={`flex items-center gap-1.5 transition-colors group text-left ${
+                            isFinished ? 'cursor-default' : 'hover:text-indigo-600'
+                          }`}
                         >
                           <PlayerIcon />
-                          <span className="font-medium text-gray-800 group-hover:text-indigo-600">{player.name}</span>
-                          <svg className="w-3 h-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
+                          <span className={`font-medium ${
+                            isFinished && player.rank === 1 ? 'text-yellow-800' : 'text-gray-800'
+                          } ${!isFinished ? 'group-hover:text-indigo-600' : ''}`}>
+                            {player.name}
+                          </span>
+                          {!isFinished && (
+                            <svg className="w-3 h-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          )}
                         </button>
                       )}
                     </td>
@@ -191,14 +277,21 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
                         ) : (
                           <button
                             onClick={() => startEditScore(ri, player.id, r.scores[player.id])}
-                            className="text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 px-2 py-0.5 rounded transition-colors min-w-[2rem] inline-block"
+                            disabled={isFinished}
+                            className={`px-2 py-0.5 rounded transition-colors min-w-[2rem] inline-block ${
+                              isFinished
+                                ? 'text-gray-600 cursor-default'
+                                : 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                            }`}
                           >
                             {r.scores[player.id] ?? 0}
                           </button>
                         )}
                       </td>
                     ))}
-                    <td className="py-3 px-3 text-center font-bold text-indigo-700">
+                    <td className={`py-3 px-3 text-center font-bold ${
+                      isFinished && player.rank === 1 ? 'text-yellow-700' : 'text-indigo-700'
+                    }`}>
                       {player.totalScore}
                     </td>
                   </tr>
@@ -209,8 +302,8 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
         </div>
       )}
 
-      {/* Score entry for new round */}
-      {gameData.players.length > 0 && (
+      {/* Score entry - only when game is active */}
+      {!isFinished && gameData.players.length > 0 && (
         <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
           <h3 className="font-bold text-sm text-gray-500 uppercase tracking-wider mb-3">
             Round {gameData.rounds.length + 1}

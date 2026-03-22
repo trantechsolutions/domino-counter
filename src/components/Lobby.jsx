@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { db, collection, getDocs } from '../lib/firebase';
+import { db, collection, getDocs, doc, deleteDoc } from '../lib/firebase';
+import { LockIcon } from './Icons';
 
 function formatDate(ts) {
   if (!ts) return '';
@@ -18,17 +19,20 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading }) {
   const [allGames, setAllGames] = useState([]);
   const [loadingGames, setLoadingGames] = useState(true);
 
-  useEffect(() => {
+  const loadGames = () => {
+    setLoadingGames(true);
     getDocs(collection(db, 'dominoGames'))
       .then((snapshot) => {
         const games = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data();
+        snapshot.forEach((d) => {
+          const data = d.data();
           games.push({
-            id: doc.id,
+            id: d.id,
             players: data.players || [],
             rounds: data.rounds || [],
             createdAt: data.createdAt,
+            finished: data.finished || false,
+            winner: data.winner || null,
           });
         });
         games.sort((a, b) => {
@@ -40,7 +44,16 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading }) {
       })
       .catch((err) => console.error('Failed to load games:', err))
       .finally(() => setLoadingGames(false));
-  }, []);
+  };
+
+  useEffect(() => { loadGames(); }, []);
+
+  const handleDelete = async (e, gameId) => {
+    e.stopPropagation();
+    if (!confirm(`Delete game ${gameId}? This cannot be undone.`)) return;
+    await deleteDoc(doc(db, 'dominoGames', gameId));
+    setAllGames((prev) => prev.filter((g) => g.id !== gameId));
+  };
 
   return (
     <div className="space-y-5">
@@ -100,20 +113,36 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading }) {
         ) : (
           <div className="divide-y divide-gray-50">
             {allGames.map((game) => (
-              <button
+              <div
                 key={game.id}
                 onClick={() => onJoinGame(game.id)}
-                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-indigo-50 active:bg-indigo-100 transition text-left"
+                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-indigo-50 active:bg-indigo-100 transition text-left cursor-pointer"
               >
-                <div className="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs shrink-0">
-                  {game.rounds.length}R
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                  game.finished
+                    ? 'bg-yellow-100 text-yellow-700'
+                    : 'bg-indigo-100 text-indigo-600'
+                }`}>
+                  {game.finished ? (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M5 5a3 3 0 015-2.236A3 3 0 0114.83 6H16a2 2 0 110 4h-1.17a3 3 0 01-1.83 1.83V14h1a2 2 0 110 4H6a2 2 0 110-4h1v-2.17A3 3 0 015.17 10H4a2 2 0 110-4h1.17A3 3 0 015 5z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <span>{game.rounds.length}R</span>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-bold text-indigo-600 tracking-wider text-sm">
                       {game.id}
                     </span>
-                    {game.players.length > 0 && (
+                    {game.finished && (
+                      <span className="text-xs text-yellow-700 bg-yellow-100 px-1.5 py-0.5 rounded font-semibold flex items-center gap-1">
+                        <LockIcon className="w-3 h-3" />
+                        Finished
+                      </span>
+                    )}
+                    {game.players.length > 0 && !game.finished && (
                       <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
                         {game.players.length} player{game.players.length !== 1 ? 's' : ''}
                       </span>
@@ -121,17 +150,26 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading }) {
                   </div>
                   {game.players.length > 0 && (
                     <p className="text-xs text-gray-500 truncate mt-0.5">
-                      {game.players.map((p) => p.name).join(', ')}
+                      {game.winner
+                        ? `Winner: ${game.winner}`
+                        : game.players.map((p) => p.name).join(', ')
+                      }
                     </p>
                   )}
                 </div>
                 <div className="text-xs text-gray-400 shrink-0">
                   {formatDate(game.createdAt)}
                 </div>
-                <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+                <button
+                  onClick={(e) => handleDelete(e, game.id)}
+                  className="text-gray-300 hover:text-red-500 transition-colors shrink-0 p-1.5 rounded-lg hover:bg-red-50"
+                  title="Delete game"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
             ))}
           </div>
         )}

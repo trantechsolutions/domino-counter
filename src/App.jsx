@@ -118,12 +118,23 @@ export default function App() {
       }
       finalScores[player.id] = parseInt(scoreString, 10);
     }
-    await updateDoc(doc(db, 'dominoGames', gameId), {
-      rounds: arrayUnion({
-        roundNumber: gameData.rounds.length + 1,
-        scores: finalScores,
-      }),
-    });
+    const newRound = { roundNumber: gameData.rounds.length + 1, scores: finalScores };
+    const allRounds = [...gameData.rounds, newRound];
+    const updates = { rounds: arrayUnion(newRound) };
+
+    // Auto-finish after 13 rounds
+    if (allRounds.length >= 13 && !gameData.finished) {
+      const totals = gameData.players.map((p) => ({
+        name: p.name,
+        total: allRounds.reduce((sum, r) => sum + (r.scores[p.id] || 0), 0),
+      }));
+      totals.sort((a, b) => a.total - b.total);
+      updates.finished = true;
+      updates.winner = totals[0].name;
+      updates.finishedAt = new Date();
+    }
+
+    await updateDoc(doc(db, 'dominoGames', gameId), updates);
     const resetScores = {};
     gameData.players.forEach((p) => {
       resetScores[p.id] = '';
