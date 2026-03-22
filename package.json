@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "homepage": "/domino-counter/",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
