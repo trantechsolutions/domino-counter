@@ -2,7 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
 
 const MODEL_PATH = import.meta.env.BASE_URL + 'yolov5_custom/model.json';
-const CONFIDENCE_THRESHOLD = 0.65;
+const CONFIDENCE_THRESHOLD = 0.5;
+const NMS_SCORE_THRESHOLD = 0.5;
+const NMS_IOU_THRESHOLD = 0.5;
+const TILE_OVERLAP = 0.25; // 25% overlap between tiles
 
 const LABEL_MAP = {
   0: { name: 'pip-1', value: 1 },
@@ -47,15 +50,13 @@ function getModel() {
   return modelPromise;
 }
 
-// Run YOLOv5 inference — accepts video or canvas element
-function detectDominoes(source, imgWidth, imgHeight) {
+// Run inference on a single tile, returning results in tile-local coords (0-1 normalized)
+function runInferenceOnTile(tileTensor) {
   const model = loadedModel;
-  if (!model) return [];
   const [modelWidth, modelHeight] = model.inputs[0].shape.slice(1, 3);
 
-  const r = tf.tidy(() => {
-    const img = tf.browser.fromPixels(source);
-    const resized = tf.image.resizeBilinear(img, [modelWidth, modelHeight]);
+  return tf.tidy(() => {
+    const resized = tf.image.resizeBilinear(tileTensor, [modelWidth, modelHeight]);
     const normalized = resized.div(255.0).expandDims(0);
     const output = model.execute(normalized);
     const squeezed = output.squeeze();
@@ -68,7 +69,7 @@ function detectDominoes(source, imgWidth, imgHeight) {
     ], -1);
 
     const { selectedIndices, selectedScores } = tf.image.nonMaxSuppressionWithScore(
-      bbox, score, 100, 0.5, 0.7
+      bbox, score, 100, NMS_IOU_THRESHOLD, NMS_SCORE_THRESHOLD
     );
 
     return [
@@ -77,33 +78,101 @@ function detectDominoes(source, imgWidth, imgHeight) {
       squeezed.slice([0, 5], [-1, -1]).argMax(-1).gather(selectedIndices),
     ];
   });
+}
 
-  return Promise.all([r[0].array(), r[1].data(), r[2].data()]).then(
-    ([boxes, scores, classes]) => {
-      const results = [];
-      for (let i = 0; i < boxes.length; i++) {
-        if (scores[i] < CONFIDENCE_THRESHOLD) continue;
-        let [x1, y1, x2, y2] = boxes[i];
-        x1 *= imgWidth;
-        x2 *= imgWidth;
-        y1 *= imgHeight;
-        y2 *= imgHeight;
-        const cls = classes[i];
-        const label = LABEL_MAP[cls];
-        if (!label) continue;
-        results.push({
-          id: i,
-          pipValue: label.value,
-          confidence: scores[i],
-          x: x1, y: y1,
-          w: x2 - x1, h: y2 - y1,
-          color: PIP_COLORS[label.value % PIP_COLORS.length],
-        });
-      }
-      tf.dispose(r);
-      return results;
+// Generate tile regions with overlap
+function getTileRegions(imgWidth, imgHeight) {
+  // For small images or close-up shots, single tile is fine
+  // Use 2x2 grid for wider shots to catch more dominoes
+  const tileSize = Math.min(imgWidth, imgHeight);
+  if (imgWidth <= tileSize * 1.2 && imgHeight <= tileSize * 1.2) {
+    return [{ x: 0, y: 0, w: imgWidth, h: imgHeight }];
+  }
+
+  const tiles = [];
+  const step = 1 - TILE_OVERLAP;
+  const cols = Math.ceil((imgWidth / tileSize - TILE_OVERLAP) / step) || 1;
+  const rows = Math.ceil((imgHeight / tileSize - TILE_OVERLAP) / step) || 1;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = Math.min(Math.round(c * tileSize * step), imgWidth - tileSize);
+      const y = Math.min(Math.round(r * tileSize * step), imgHeight - tileSize);
+      const w = Math.min(tileSize, imgWidth - x);
+      const h = Math.min(tileSize, imgHeight - y);
+      tiles.push({ x: Math.max(0, x), y: Math.max(0, y), w, h });
     }
-  );
+  }
+
+  // Always include full image as a tile too (catches things at tile boundaries)
+  tiles.push({ x: 0, y: 0, w: imgWidth, h: imgHeight });
+  return tiles;
+}
+
+// Client-side NMS to merge results across tiles
+function mergeDetections(allResults, iouThreshold = 0.4) {
+  const sorted = [...allResults].sort((a, b) => b.confidence - a.confidence);
+  const keep = [];
+  for (const box of sorted) {
+    const dominated = keep.some((kept) => {
+      const x1 = Math.max(box.x, kept.x);
+      const y1 = Math.max(box.y, kept.y);
+      const x2 = Math.min(box.x + box.w, kept.x + kept.w);
+      const y2 = Math.min(box.y + box.h, kept.y + kept.h);
+      const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+      const union = box.w * box.h + kept.w * kept.h - inter;
+      return union > 0 && inter / union > iouThreshold;
+    });
+    if (!dominated) keep.push(box);
+  }
+  return keep;
+}
+
+// Run YOLOv5 inference with tiling for wider detection range
+async function detectDominoes(source, imgWidth, imgHeight) {
+  if (!loadedModel) return [];
+
+  const tiles = getTileRegions(imgWidth, imgHeight);
+  const fullImg = tf.browser.fromPixels(source);
+  const allResults = [];
+  let idCounter = 0;
+
+  for (const tile of tiles) {
+    const tileTensor = tf.tidy(() =>
+      fullImg.slice([tile.y, tile.x, 0], [tile.h, tile.w, 3])
+    );
+
+    const r = runInferenceOnTile(tileTensor);
+    const [boxes, scores, classes] = await Promise.all([
+      r[0].array(), r[1].data(), r[2].data(),
+    ]);
+    tf.dispose(r);
+    tileTensor.dispose();
+
+    for (let i = 0; i < boxes.length; i++) {
+      if (scores[i] < CONFIDENCE_THRESHOLD) continue;
+      let [x1, y1, x2, y2] = boxes[i];
+      // Scale from normalized (0-1) to tile coords, then offset to full image
+      x1 = x1 * tile.w + tile.x;
+      x2 = x2 * tile.w + tile.x;
+      y1 = y1 * tile.h + tile.y;
+      y2 = y2 * tile.h + tile.y;
+      const cls = classes[i];
+      const label = LABEL_MAP[cls];
+      if (!label) continue;
+      allResults.push({
+        id: idCounter++,
+        pipValue: label.value,
+        confidence: scores[i],
+        x: x1, y: y1,
+        w: x2 - x1, h: y2 - y1,
+        color: PIP_COLORS[label.value % PIP_COLORS.length],
+      });
+    }
+  }
+
+  fullImg.dispose();
+  return mergeDetections(allResults);
 }
 
 export default function PipTracker({ gameData, onApplyScore }) {
