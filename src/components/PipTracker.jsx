@@ -289,11 +289,9 @@ export default function PipTracker({ gameData, onApplyScore }) {
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
       });
       streamRef.current = stream;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
+      // Set cameraOn first so the fullscreen video element renders,
+      // then attach stream on next tick when videoRef points to new element
       setCameraOn(true);
-      loopRef.current = true;
-      runLiveLoop();
     } catch (err) {
       console.error('Camera error:', err);
       setError(
@@ -305,6 +303,21 @@ export default function PipTracker({ gameData, onApplyScore }) {
       );
     }
   };
+
+  // Attach stream to video element once cameraOn renders the fullscreen view
+  useEffect(() => {
+    if (!cameraOn || !streamRef.current || !videoRef.current) return;
+    const video = videoRef.current;
+    video.srcObject = streamRef.current;
+    video.play().then(() => {
+      loopRef.current = true;
+      runLiveLoop();
+    }).catch((err) => {
+      console.error('Video play error:', err);
+      setError(`Camera error: ${err?.message || 'Could not play video'}`);
+      setCameraOn(false);
+    });
+  }, [cameraOn, runLiveLoop]);
 
   const stopCamera = useCallback(() => {
     loopRef.current = false;
