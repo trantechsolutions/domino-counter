@@ -18,8 +18,8 @@ export default defineConfig({
         background_color: '#f9fafb',
         display: 'standalone',
         orientation: 'portrait',
-        scope: '/domino-counter/',
-        start_url: '/domino-counter/',
+        scope: '/',
+        start_url: '/',
         icons: [
           {
             src: 'pwa-192x192.png',
@@ -51,5 +51,5 @@ export default defineConfig({
       },
     }),
   ],
-  base: '/domino-counter/',
+  base: '/',
 })
