@@ -24,7 +24,7 @@ const PIP_COLORS = [
   '#d946ef', '#7c3aed', '#06b6d4', '#ec4899', '#2563eb', '#dc2626',
 ];
 
-// Singleton model loader
+// Singleton model loader with warmup
 let modelPromise = null;
 let loadedModel = null;
 
@@ -34,6 +34,12 @@ function getModel() {
     modelPromise = (async () => {
       tf.enableProdMode();
       const model = await tf.loadGraphModel(MODEL_PATH);
+      // Warmup: run a dummy inference to compile WebGL shaders
+      const [mw, mh] = model.inputs[0].shape.slice(1, 3);
+      const dummy = tf.zeros([1, mw, mh, 3]);
+      model.execute(dummy);
+      dummy.dispose();
+      await tf.nextFrame();
       loadedModel = model;
       return model;
     })();
@@ -41,21 +47,19 @@ function getModel() {
   return modelPromise;
 }
 
-// Run YOLOv5 inference with TF.js NMS
-async function detectDominoes(canvas) {
-  const model = await getModel();
+// Run YOLOv5 inference — accepts video or canvas element
+function detectDominoes(source, imgWidth, imgHeight) {
+  const model = loadedModel;
+  if (!model) return [];
   const [modelWidth, modelHeight] = model.inputs[0].shape.slice(1, 3);
-  const imgWidth = canvas.width;
-  const imgHeight = canvas.height;
 
   const r = tf.tidy(() => {
-    const img = tf.browser.fromPixels(canvas);
+    const img = tf.browser.fromPixels(source);
     const resized = tf.image.resizeBilinear(img, [modelWidth, modelHeight]);
     const normalized = resized.div(255.0).expandDims(0);
     const output = model.execute(normalized);
     const squeezed = output.squeeze();
 
-    // Extract boxes and scores
     const [x, y, w, h] = squeezed.slice([0, 0], [-1, 4]).split(4, -1);
     const score = squeezed.slice([0, 4], [-1, 1]).squeeze();
     const bbox = tf.concat([
@@ -63,7 +67,6 @@ async function detectDominoes(canvas) {
       x.add(w.div(2)), y.add(h.div(2)),
     ], -1);
 
-    // TF.js built-in NMS (same as pip-tracker: iou=0.5, score=0.7)
     const { selectedIndices, selectedScores } = tf.image.nonMaxSuppressionWithScore(
       bbox, score, 100, 0.5, 0.7
     );
@@ -75,53 +78,54 @@ async function detectDominoes(canvas) {
     ];
   });
 
-  const [boxes, scores, classes] = await Promise.all([
-    r[0].array(), r[1].data(), r[2].data(),
-  ]);
-
-  const results = [];
-  for (let i = 0; i < boxes.length; i++) {
-    if (scores[i] < CONFIDENCE_THRESHOLD) continue;
-    let [x1, y1, x2, y2] = boxes[i];
-    x1 *= imgWidth;
-    x2 *= imgWidth;
-    y1 *= imgHeight;
-    y2 *= imgHeight;
-
-    const cls = classes[i];
-    const label = LABEL_MAP[cls];
-    if (!label) continue;
-
-    results.push({
-      id: i,
-      pipValue: label.value,
-      confidence: scores[i],
-      x: x1,
-      y: y1,
-      w: x2 - x1,
-      h: y2 - y1,
-      color: PIP_COLORS[label.value % PIP_COLORS.length],
-    });
-  }
-
-  tf.dispose(r);
-  return results;
+  return Promise.all([r[0].array(), r[1].data(), r[2].data()]).then(
+    ([boxes, scores, classes]) => {
+      const results = [];
+      for (let i = 0; i < boxes.length; i++) {
+        if (scores[i] < CONFIDENCE_THRESHOLD) continue;
+        let [x1, y1, x2, y2] = boxes[i];
+        x1 *= imgWidth;
+        x2 *= imgWidth;
+        y1 *= imgHeight;
+        y2 *= imgHeight;
+        const cls = classes[i];
+        const label = LABEL_MAP[cls];
+        if (!label) continue;
+        results.push({
+          id: i,
+          pipValue: label.value,
+          confidence: scores[i],
+          x: x1, y: y1,
+          w: x2 - x1, h: y2 - y1,
+          color: PIP_COLORS[label.value % PIP_COLORS.length],
+        });
+      }
+      tf.dispose(r);
+      return results;
+    }
+  );
 }
 
 export default function PipTracker({ gameData, onApplyScore }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const overlayRef = useRef(null);
   const streamRef = useRef(null);
+  const loopRef = useRef(false);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [modelReady, setModelReady] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
 
+  // Live detections (updated every frame while camera is on)
+  const [liveDetections, setLiveDetections] = useState([]);
+  const [fps, setFps] = useState(0);
+
+  // Frozen capture state
   const [capturedImage, setCapturedImage] = useState(null);
   const [capturedDims, setCapturedDims] = useState({ w: 0, h: 0 });
   const [detections, setDetections] = useState([]);
-  const [detecting, setDetecting] = useState(false);
 
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
 
@@ -129,10 +133,7 @@ export default function PipTracker({ gameData, onApplyScore }) {
   useEffect(() => {
     setStatus('Loading AI model...');
     getModel()
-      .then(() => {
-        setModelReady(true);
-        setStatus('');
-      })
+      .then(() => { setModelReady(true); setStatus(''); })
       .catch((err) => {
         console.error('Model load error:', err);
         setError(`Failed to load AI model: ${err?.message || String(err)}`);
@@ -147,11 +148,72 @@ export default function PipTracker({ gameData, onApplyScore }) {
   }, [gameData?.players, selectedPlayerId]);
 
   const totalPips = detections.reduce((sum, d) => sum + d.pipValue, 0);
+  const liveTotalPips = liveDetections.reduce((sum, d) => sum + d.pipValue, 0);
 
+  // --- Live detection loop ---
+  const runLiveLoop = useCallback(async () => {
+    let lastFpsTime = performance.now();
+    let frameCount = 0;
+
+    while (loopRef.current) {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || !loadedModel) {
+        await tf.nextFrame();
+        continue;
+      }
+
+      try {
+        const results = await detectDominoes(video, video.videoWidth, video.videoHeight);
+        if (!loopRef.current) break;
+        setLiveDetections(results);
+
+        frameCount++;
+        const now = performance.now();
+        if (now - lastFpsTime >= 1000) {
+          setFps(frameCount);
+          frameCount = 0;
+          lastFpsTime = now;
+        }
+      } catch (err) {
+        console.error('Live detection error:', err);
+      }
+
+      await tf.nextFrame();
+    }
+  }, []);
+
+  // Draw live bounding boxes on overlay canvas
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const video = videoRef.current;
+    if (!overlay || !video || !cameraOn) return;
+
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 480;
+    const ctx = overlay.getContext('2d');
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    liveDetections.forEach((d) => {
+      ctx.strokeStyle = d.color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(d.x, d.y, d.w, d.h);
+
+      const text = `pip-${d.pipValue} ${(d.confidence * 100).toFixed(0)}%`;
+      ctx.fillStyle = d.color;
+      const tw = ctx.measureText(text).width;
+      ctx.fillRect(d.x, d.y - 18, tw + 8, 18);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(text, d.x + 4, d.y - 4);
+    });
+  }, [liveDetections, cameraOn]);
+
+  // --- Camera ---
   const startCamera = async () => {
     setError('');
     setCapturedImage(null);
     setDetections([]);
+    setLiveDetections([]);
     setStatus('');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -161,6 +223,8 @@ export default function PipTracker({ gameData, onApplyScore }) {
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setCameraOn(true);
+      loopRef.current = true;
+      runLiveLoop();
     } catch (err) {
       console.error('Camera error:', err);
       setError(
@@ -174,61 +238,41 @@ export default function PipTracker({ gameData, onApplyScore }) {
   };
 
   const stopCamera = useCallback(() => {
+    loopRef.current = false;
     setCameraOn(false);
+    setLiveDetections([]);
+    setFps(0);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    if (videoRef.current) videoRef.current.srcObject = null;
   }, []);
 
   useEffect(() => () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-    }
+    loopRef.current = false;
+    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
   }, []);
 
-  const captureAndDetect = async () => {
-    if (!videoRef.current || !modelReady) return;
-
+  // --- Capture (freeze current frame + detections) ---
+  const capture = () => {
+    if (!videoRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
+    canvas.getContext('2d').drawImage(video, 0, 0);
 
-    const imageData = canvas.toDataURL('image/jpeg', 0.9);
-    setCapturedImage(imageData);
+    setCapturedImage(canvas.toDataURL('image/jpeg', 0.9));
     setCapturedDims({ w: video.videoWidth, h: video.videoHeight });
+    // Freeze current live detections as the editable list
+    setDetections(liveDetections.map((d, i) => ({ ...d, id: i })));
     stopCamera();
-
-    setDetecting(true);
-    setStatus('Detecting dominoes...');
-    setError('');
-
-    try {
-      const results = await detectDominoes(canvas);
-      setDetections(results);
-      setStatus(results.length > 0
-        ? `Found ${results.length} domino${results.length !== 1 ? 'es' : ''}`
-        : 'No dominoes detected'
-      );
-    } catch (err) {
-      console.error('Detection error:', err);
-      setError(`Detection failed: ${err?.message || String(err)}`);
-      setStatus('');
-    } finally {
-      setDetecting(false);
-    }
   };
 
+  // --- Edit detections ---
   const updatePipValue = (id, newValue) => {
-    setDetections((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, pipValue: newValue } : d))
-    );
+    setDetections((prev) => prev.map((d) => (d.id === id ? { ...d, pipValue: newValue } : d)));
   };
 
   const removeDetection = (id) => {
@@ -243,10 +287,7 @@ export default function PipTracker({ gameData, onApplyScore }) {
   };
 
   const handleApply = () => {
-    if (!selectedPlayerId) {
-      alert('Please select a player first.');
-      return;
-    }
+    if (!selectedPlayerId) { alert('Please select a player first.'); return; }
     onApplyScore(selectedPlayerId, totalPips.toString());
     const playerName = gameData?.players?.find((p) => p.id === selectedPlayerId)?.name || 'player';
     alert(`Score of ${totalPips} applied to ${playerName}. Check the Score Tracker tab.`);
@@ -260,18 +301,15 @@ export default function PipTracker({ gameData, onApplyScore }) {
     startCamera();
   };
 
-  // --- Review screen ---
+  // --- Review screen (after capture) ---
   if (capturedImage) {
     return (
       <div className="space-y-4">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="relative">
             <img src={capturedImage} alt="Captured dominoes" className="w-full h-auto block" />
-            <svg
-              className="absolute inset-0 w-full h-full"
-              viewBox={`0 0 ${capturedDims.w} ${capturedDims.h}`}
-              preserveAspectRatio="xMidYMid meet"
-            >
+            <svg className="absolute inset-0 w-full h-full"
+              viewBox={`0 0 ${capturedDims.w} ${capturedDims.h}`} preserveAspectRatio="xMidYMid meet">
               {detections.filter((d) => !d.manual).map((d) => (
                 <g key={d.id}>
                   <rect x={d.x} y={d.y} width={d.w} height={d.h}
@@ -286,19 +324,6 @@ export default function PipTracker({ gameData, onApplyScore }) {
                 </g>
               ))}
             </svg>
-            {detecting && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                <div className="text-center">
-                  <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                  <p className="text-white text-sm">Detecting dominoes...</p>
-                </div>
-              </div>
-            )}
-            {status && !detecting && (
-              <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">
-                {status}
-              </div>
-            )}
           </div>
 
           <div className="p-4 sm:p-5 flex items-center justify-between border-t border-gray-100">
@@ -327,7 +352,7 @@ export default function PipTracker({ gameData, onApplyScore }) {
           </div>
           {detections.length === 0 ? (
             <div className="p-6 text-center text-gray-400 text-sm">
-              {detecting ? 'Analyzing image...' : 'No dominoes detected. Add manually or retake.'}
+              No dominoes detected. Add manually or retake.
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
@@ -383,12 +408,13 @@ export default function PipTracker({ gameData, onApplyScore }) {
     );
   }
 
-  // --- Camera screen ---
+  // --- Live camera screen ---
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="relative bg-gray-900 aspect-video">
           <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
+          <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           <canvas ref={canvasRef} className="hidden" />
 
           {!cameraOn && (
@@ -411,15 +437,21 @@ export default function PipTracker({ gameData, onApplyScore }) {
             </div>
           )}
 
+          {/* Live pip count overlay */}
+          {cameraOn && (
+            <div className="absolute top-3 left-3 bg-black/70 text-white px-3 py-1.5 rounded-lg flex items-center gap-3">
+              <span className="text-2xl font-extrabold text-indigo-400">{liveTotalPips}</span>
+              <span className="text-xs text-gray-300">pips</span>
+              {fps > 0 && <span className="text-xs text-gray-500">{fps} fps</span>}
+            </div>
+          )}
+
+          {/* Capture button */}
           {cameraOn && (
             <div className="absolute bottom-4 inset-x-0 flex justify-center">
-              <button onClick={captureAndDetect} disabled={detecting || !modelReady}
-                className="w-16 h-16 rounded-full bg-white border-4 border-gray-300 shadow-lg hover:border-indigo-400 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center">
-                {detecting ? (
-                  <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-indigo-600" />
-                )}
+              <button onClick={capture}
+                className="w-16 h-16 rounded-full bg-white border-4 border-gray-300 shadow-lg hover:border-indigo-400 active:scale-95 transition-all flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-indigo-600" />
               </button>
             </div>
           )}
@@ -430,7 +462,7 @@ export default function PipTracker({ gameData, onApplyScore }) {
             {modelReady ? (
               <span className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                Model ready — offline
+                {cameraOn ? 'Live detection' : 'Model ready'}
               </span>
             ) : (
               <span className="flex items-center gap-1.5">
