@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
 
 const MODEL_PATH = import.meta.env.BASE_URL + 'yolov5_custom/model.json';
-const CONFIDENCE_THRESHOLD = 0.5;
-const NMS_SCORE_THRESHOLD = 0.5;
+const CONFIDENCE_THRESHOLD = 0.8;
+const NMS_SCORE_THRESHOLD = 0.8;
 const NMS_IOU_THRESHOLD = 0.5;
 const TILE_OVERLAP = 0.25; // 25% overlap between tiles
 
