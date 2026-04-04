@@ -477,53 +477,67 @@ export default function PipTracker({ gameData, onApplyScore }) {
     );
   }
 
-  // --- Live camera screen ---
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="relative bg-gray-900 aspect-video">
+  // --- Live camera screen (fullscreen on mobile when active) ---
+  if (cameraOn) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black flex flex-col">
+        <div className="relative flex-1 min-h-0">
           <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
           <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           <canvas ref={canvasRef} className="hidden" />
 
-          {!cameraOn && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-              <div className="text-center">
-                {!modelReady ? (
-                  <>
-                    <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                    <p className="text-gray-400 text-sm">{status || 'Loading AI model...'}</p>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-12 h-12 text-gray-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    <p className="text-gray-500 text-sm">Tap Start Camera to begin</p>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Live pip count overlay */}
-          {cameraOn && (
-            <div className="absolute top-3 left-3 bg-black/70 text-white px-3 py-1.5 rounded-lg flex items-center gap-3">
-              <span className="text-2xl font-extrabold text-indigo-400">{liveTotalPips}</span>
-              <span className="text-xs text-gray-300">pips</span>
-              {fps > 0 && <span className="text-xs text-gray-500">{fps} fps</span>}
-            </div>
-          )}
+          <div className="absolute top-3 left-3 bg-black/70 text-white px-3 py-1.5 rounded-lg flex items-center gap-3 safe-area-top">
+            <span className="text-2xl font-extrabold text-indigo-400">{liveTotalPips}</span>
+            <span className="text-xs text-gray-300">pips</span>
+            {fps > 0 && <span className="text-xs text-gray-500">{fps} fps</span>}
+          </div>
+
+          {/* Stop button */}
+          <button onClick={stopCamera}
+            className="absolute top-3 right-3 bg-black/70 text-white font-semibold py-1.5 px-4 rounded-lg hover:bg-red-600 active:bg-red-700 transition text-sm">
+            Close
+          </button>
 
           {/* Capture button */}
-          {cameraOn && (
-            <div className="absolute bottom-4 inset-x-0 flex justify-center">
-              <button onClick={capture}
-                className="w-16 h-16 rounded-full bg-white border-4 border-gray-300 shadow-lg hover:border-indigo-400 active:scale-95 transition-all flex items-center justify-center">
-                <div className="w-12 h-12 rounded-full bg-indigo-600" />
-              </button>
+          <div className="absolute bottom-6 inset-x-0 flex justify-center">
+            <button onClick={capture}
+              className="w-18 h-18 rounded-full bg-white/90 border-4 border-white shadow-2xl hover:border-indigo-400 active:scale-90 transition-all flex items-center justify-center"
+              style={{ width: 72, height: 72 }}>
+              <div className="rounded-full bg-indigo-600" style={{ width: 56, height: 56 }} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Idle camera screen ---
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="relative bg-gray-900 aspect-[3/4] sm:aspect-video">
+          <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
+          <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          <canvas ref={canvasRef} className="hidden" />
+
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+            <div className="text-center">
+              {!modelReady ? (
+                <>
+                  <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  <p className="text-gray-400 text-sm">{status || 'Loading AI model...'}</p>
+                </>
+              ) : (
+                <>
+                  <svg className="w-12 h-12 text-gray-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-gray-500 text-sm">Tap Start Camera to begin</p>
+                </>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="p-4 sm:p-5 flex items-center justify-between gap-3 border-t border-gray-100">
@@ -531,7 +545,7 @@ export default function PipTracker({ gameData, onApplyScore }) {
             {modelReady ? (
               <span className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                {cameraOn ? 'Live detection' : 'Model ready'}
+                Model ready
               </span>
             ) : (
               <span className="flex items-center gap-1.5">
@@ -540,17 +554,10 @@ export default function PipTracker({ gameData, onApplyScore }) {
               </span>
             )}
           </div>
-          {!cameraOn ? (
-            <button onClick={startCamera} disabled={!modelReady}
-              className="bg-indigo-600 text-white font-semibold py-2.5 px-5 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition disabled:opacity-50">
-              Start Camera
-            </button>
-          ) : (
-            <button onClick={stopCamera}
-              className="bg-red-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-red-700 active:bg-red-800 transition">
-              Stop
-            </button>
-          )}
+          <button onClick={startCamera} disabled={!modelReady}
+            className="bg-indigo-600 text-white font-semibold py-2.5 px-5 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition disabled:opacity-50">
+            Start Camera
+          </button>
         </div>
       </div>
 
