@@ -1,62 +1,111 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import * as tf from '@tensorflow/tfjs';
 
-const API_KEY = 'EXjabT4BycjIXdEm4r3V'; // Replace with your actual Roboflow API key
-const MODEL_NAME = 'double-twelve-dominoes-lmkit-anpjz';
-const MODEL_VERSION = 2;
-const DETECT_URL = `https://detect.roboflow.com/${MODEL_NAME}/${MODEL_VERSION}`;
+const MODEL_PATH = import.meta.env.BASE_URL + 'yolov5_custom/model.json';
+const CONFIDENCE_THRESHOLD = 0.65;
+
+const LABEL_MAP = {
+  0: { name: 'pip-1', value: 1 },
+  1: { name: 'pip-2', value: 2 },
+  2: { name: 'pip-3', value: 3 },
+  3: { name: 'pip-4', value: 4 },
+  4: { name: 'pip-5', value: 5 },
+  5: { name: 'pip-6', value: 6 },
+  6: { name: 'pip-7', value: 7 },
+  7: { name: 'pip-8', value: 8 },
+  8: { name: 'pip-9', value: 9 },
+  9: { name: 'pip-10', value: 10 },
+  10: { name: 'pip-11', value: 11 },
+  11: { name: 'pip-12', value: 12 },
+};
 
 const PIP_COLORS = [
   '#8b5cf6', '#ef4444', '#eab308', '#22c55e', '#3b82f6', '#16a34a',
   '#d946ef', '#7c3aed', '#06b6d4', '#ec4899', '#2563eb', '#dc2626',
 ];
 
-// IoU (Intersection over Union) for NMS
-function calculateIoU(a, b) {
-  const x1 = Math.max(a.x, b.x);
-  const y1 = Math.max(a.y, b.y);
-  const x2 = Math.min(a.x + a.w, b.x + b.w);
-  const y2 = Math.min(a.y + a.h, b.y + b.h);
-  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-  const areaA = a.w * a.h;
-  const areaB = b.w * b.h;
-  const union = areaA + areaB - intersection;
-  return union > 0 ? intersection / union : 0;
-}
+// Singleton model loader
+let modelPromise = null;
+let loadedModel = null;
 
-// Non-Maximum Suppression — keep only the best detection per region
-function nms(boxes, iouThreshold = 0.4) {
-  const sorted = [...boxes].sort((a, b) => b.confidence - a.confidence);
-  const keep = [];
-  for (const box of sorted) {
-    const dominated = keep.some((kept) => calculateIoU(box, kept) > iouThreshold);
-    if (!dominated) keep.push(box);
+function getModel() {
+  if (loadedModel) return Promise.resolve(loadedModel);
+  if (!modelPromise) {
+    modelPromise = (async () => {
+      tf.enableProdMode();
+      const model = await tf.loadGraphModel(MODEL_PATH);
+      loadedModel = model;
+      return model;
+    })();
   }
-  return keep;
+  return modelPromise;
 }
 
+// Run YOLOv5 inference with TF.js NMS
 async function detectDominoes(canvas) {
-  const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-  const res = await fetch(`${DETECT_URL}?api_key=${API_KEY}&confidence=40&overlap=25`, {
-    method: 'POST',
-    body: base64,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${text || res.statusText}`);
-  }
-  const data = await res.json();
-  const predictions = data.predictions || [];
+  const model = await getModel();
+  const [modelWidth, modelHeight] = model.inputs[0].shape.slice(1, 3);
+  const imgWidth = canvas.width;
+  const imgHeight = canvas.height;
 
-  // Convert to {x, y, w, h} format and apply client-side NMS
-  const boxes = predictions.map((p) => ({
-    ...p,
-    x: p.x - p.width / 2,
-    y: p.y - p.height / 2,
-    w: p.width,
-    h: p.height,
-  }));
-  return nms(boxes);
+  const r = tf.tidy(() => {
+    const img = tf.browser.fromPixels(canvas);
+    const resized = tf.image.resizeBilinear(img, [modelWidth, modelHeight]);
+    const normalized = resized.div(255.0).expandDims(0);
+    const output = model.execute(normalized);
+    const squeezed = output.squeeze();
+
+    // Extract boxes and scores
+    const [x, y, w, h] = squeezed.slice([0, 0], [-1, 4]).split(4, -1);
+    const score = squeezed.slice([0, 4], [-1, 1]).squeeze();
+    const bbox = tf.concat([
+      x.sub(w.div(2)), y.sub(h.div(2)),
+      x.add(w.div(2)), y.add(h.div(2)),
+    ], -1);
+
+    // TF.js built-in NMS (same as pip-tracker: iou=0.5, score=0.7)
+    const { selectedIndices, selectedScores } = tf.image.nonMaxSuppressionWithScore(
+      bbox, score, 100, 0.5, 0.7
+    );
+
+    return [
+      bbox.gather(selectedIndices),
+      selectedScores,
+      squeezed.slice([0, 5], [-1, -1]).argMax(-1).gather(selectedIndices),
+    ];
+  });
+
+  const [boxes, scores, classes] = await Promise.all([
+    r[0].array(), r[1].data(), r[2].data(),
+  ]);
+
+  const results = [];
+  for (let i = 0; i < boxes.length; i++) {
+    if (scores[i] < CONFIDENCE_THRESHOLD) continue;
+    let [x1, y1, x2, y2] = boxes[i];
+    x1 *= imgWidth;
+    x2 *= imgWidth;
+    y1 *= imgHeight;
+    y2 *= imgHeight;
+
+    const cls = classes[i];
+    const label = LABEL_MAP[cls];
+    if (!label) continue;
+
+    results.push({
+      id: i,
+      pipValue: label.value,
+      confidence: scores[i],
+      x: x1,
+      y: y1,
+      w: x2 - x1,
+      h: y2 - y1,
+      color: PIP_COLORS[label.value % PIP_COLORS.length],
+    });
+  }
+
+  tf.dispose(r);
+  return results;
 }
 
 export default function PipTracker({ gameData, onApplyScore }) {
@@ -65,17 +114,31 @@ export default function PipTracker({ gameData, onApplyScore }) {
   const streamRef = useRef(null);
 
   const [cameraOn, setCameraOn] = useState(false);
+  const [modelReady, setModelReady] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
 
-  // Capture state
   const [capturedImage, setCapturedImage] = useState(null);
   const [capturedDims, setCapturedDims] = useState({ w: 0, h: 0 });
   const [detections, setDetections] = useState([]);
   const [detecting, setDetecting] = useState(false);
 
-  // Player selection
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
+
+  // Load model on mount
+  useEffect(() => {
+    setStatus('Loading AI model...');
+    getModel()
+      .then(() => {
+        setModelReady(true);
+        setStatus('');
+      })
+      .catch((err) => {
+        console.error('Model load error:', err);
+        setError(`Failed to load AI model: ${err?.message || String(err)}`);
+        setStatus('');
+      });
+  }, []);
 
   useEffect(() => {
     if (gameData?.players?.length > 0 && !selectedPlayerId) {
@@ -85,7 +148,6 @@ export default function PipTracker({ gameData, onApplyScore }) {
 
   const totalPips = detections.reduce((sum, d) => sum + d.pipValue, 0);
 
-  // --- Camera ---
   const startCamera = async () => {
     setError('');
     setCapturedImage(null);
@@ -128,9 +190,8 @@ export default function PipTracker({ gameData, onApplyScore }) {
     }
   }, []);
 
-  // --- Capture & Detect ---
   const captureAndDetect = async () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || !modelReady) return;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -149,23 +210,7 @@ export default function PipTracker({ gameData, onApplyScore }) {
     setError('');
 
     try {
-      const predictions = await detectDominoes(canvas);
-
-      const results = predictions.map((p, i) => {
-        const raw = p.class || '';
-        const pipValue = parseInt(raw.replace('pip-', ''), 10) || parseInt(raw, 10) || 0;
-        return {
-          id: i,
-          pipValue,
-          confidence: p.confidence,
-          x: p.x,
-          y: p.y,
-          w: p.w,
-          h: p.h,
-          color: PIP_COLORS[pipValue % PIP_COLORS.length],
-        };
-      });
-
+      const results = await detectDominoes(canvas);
       setDetections(results);
       setStatus(results.length > 0
         ? `Found ${results.length} domino${results.length !== 1 ? 'es' : ''}`
@@ -180,7 +225,6 @@ export default function PipTracker({ gameData, onApplyScore }) {
     }
   };
 
-  // --- Edit detection ---
   const updatePipValue = (id, newValue) => {
     setDetections((prev) =>
       prev.map((d) => (d.id === id ? { ...d, pipValue: newValue } : d))
@@ -198,7 +242,6 @@ export default function PipTracker({ gameData, onApplyScore }) {
     ]);
   };
 
-  // --- Apply score ---
   const handleApply = () => {
     if (!selectedPlayerId) {
       alert('Please select a player first.');
@@ -217,7 +260,7 @@ export default function PipTracker({ gameData, onApplyScore }) {
     startCamera();
   };
 
-  // --- Review screen (after capture) ---
+  // --- Review screen ---
   if (capturedImage) {
     return (
       <div className="space-y-4">
@@ -351,17 +394,26 @@ export default function PipTracker({ gameData, onApplyScore }) {
           {!cameraOn && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
               <div className="text-center">
-                <svg className="w-12 h-12 text-gray-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                <p className="text-gray-500 text-sm">Tap Start Camera to begin</p>
+                {!modelReady ? (
+                  <>
+                    <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                    <p className="text-gray-400 text-sm">{status || 'Loading AI model...'}</p>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-12 h-12 text-gray-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-gray-500 text-sm">Tap Start Camera to begin</p>
+                  </>
+                )}
               </div>
             </div>
           )}
 
           {cameraOn && (
             <div className="absolute bottom-4 inset-x-0 flex justify-center">
-              <button onClick={captureAndDetect} disabled={detecting}
+              <button onClick={captureAndDetect} disabled={detecting || !modelReady}
                 className="w-16 h-16 rounded-full bg-white border-4 border-gray-300 shadow-lg hover:border-indigo-400 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center">
                 {detecting ? (
                   <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -374,10 +426,22 @@ export default function PipTracker({ gameData, onApplyScore }) {
         </div>
 
         <div className="p-4 sm:p-5 flex items-center justify-between gap-3 border-t border-gray-100">
-          <p className="text-sm text-gray-500">Point camera at dominoes, then tap capture</p>
+          <div className="text-sm text-gray-500">
+            {modelReady ? (
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                Model ready — offline
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                Loading model...
+              </span>
+            )}
+          </div>
           {!cameraOn ? (
-            <button onClick={startCamera}
-              className="bg-indigo-600 text-white font-semibold py-2.5 px-5 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition">
+            <button onClick={startCamera} disabled={!modelReady}
+              className="bg-indigo-600 text-white font-semibold py-2.5 px-5 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition disabled:opacity-50">
               Start Camera
             </button>
           ) : (
