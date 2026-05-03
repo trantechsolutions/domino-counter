@@ -45,6 +45,7 @@ export default function App() {
           const claim = getPlayerClaim(upperId);
           if (claim) {
             setMyPlayer(claim);
+            setShowPlayerClaim(false);
           } else {
             setShowPlayerClaim(true);
           }
