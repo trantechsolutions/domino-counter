@@ -1,120 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
+import { getModel, isModelLoaded, detectDominoes, PIP_COLORS } from '../lib/pipDetect';
 
-const MODEL_PATH = import.meta.env.BASE_URL + 'yolov5_custom/model.json';
-const CONFIDENCE_THRESHOLD = 0.8;
-const NMS_SCORE_THRESHOLD = 0.8;
-const NMS_IOU_THRESHOLD = 0.3;
-const TILE_OVERLAP = 0.25;
-
-const LABEL_MAP = {
-  0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6,
-  6: 7, 7: 8, 8: 9, 9: 10, 10: 11, 11: 12,
-};
-
-const PIP_COLORS = [
-  '#8b5cf6', '#ef4444', '#eab308', '#22c55e', '#3b82f6', '#16a34a',
-  '#d946ef', '#7c3aed', '#06b6d4', '#ec4899', '#2563eb', '#dc2626',
-];
-
-// Shared model singleton (same as PipTracker)
-let modelPromise = null;
-let loadedModel = null;
-
-function getModel() {
-  if (loadedModel) return Promise.resolve(loadedModel);
-  if (!modelPromise) {
-    modelPromise = (async () => {
-      tf.enableProdMode();
-      const model = await tf.loadGraphModel(MODEL_PATH);
-      const [mw, mh] = model.inputs[0].shape.slice(1, 3);
-      const dummy = tf.zeros([1, mw, mh, 3]);
-      model.execute(dummy);
-      dummy.dispose();
-      await tf.nextFrame();
-      loadedModel = model;
-      return model;
-    })();
-  }
-  return modelPromise;
-}
-
-function runTile(tileTensor) {
-  const model = loadedModel;
-  const [mw, mh] = model.inputs[0].shape.slice(1, 3);
-  return tf.tidy(() => {
-    const resized = tf.image.resizeBilinear(tileTensor, [mw, mh]);
-    const norm = resized.div(255.0).expandDims(0);
-    const out = model.execute(norm).squeeze();
-    const [x, y, w, h] = out.slice([0, 0], [-1, 4]).split(4, -1);
-    const score = out.slice([0, 4], [-1, 1]).squeeze();
-    const bbox = tf.concat([x.sub(w.div(2)), y.sub(h.div(2)), x.add(w.div(2)), y.add(h.div(2))], -1);
-    const { selectedIndices, selectedScores } = tf.image.nonMaxSuppressionWithScore(bbox, score, 100, NMS_IOU_THRESHOLD, NMS_SCORE_THRESHOLD);
-    return [bbox.gather(selectedIndices), selectedScores, out.slice([0, 5], [-1, -1]).argMax(-1).gather(selectedIndices)];
-  });
-}
-
-function getTiles(w, h) {
-  const size = Math.min(w, h);
-  if (w <= size * 1.2 && h <= size * 1.2) return [{ x: 0, y: 0, w, h }];
-  const tiles = [];
-  const step = 1 - TILE_OVERLAP;
-  const cols = Math.ceil((w / size - TILE_OVERLAP) / step) || 1;
-  const rows = Math.ceil((h / size - TILE_OVERLAP) / step) || 1;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const tx = Math.max(0, Math.min(Math.round(c * size * step), w - size));
-      const ty = Math.max(0, Math.min(Math.round(r * size * step), h - size));
-      tiles.push({ x: tx, y: ty, w: Math.min(size, w - tx), h: Math.min(size, h - ty) });
-    }
-  }
-  tiles.push({ x: 0, y: 0, w, h });
-  return tiles;
-}
-
-function mergeBoxes(all, iou = 0.25) {
-  const sorted = [...all].sort((a, b) => b.confidence - a.confidence);
-  const keep = [];
-  for (const box of sorted) {
-    const dup = keep.some((k) => {
-      const x1 = Math.max(box.x, k.x), y1 = Math.max(box.y, k.y);
-      const x2 = Math.min(box.x + box.w, k.x + k.w), y2 = Math.min(box.y + box.h, k.y + k.h);
-      const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-      const union = box.w * box.h + k.w * k.h - inter;
-      return union > 0 && inter / union > iou;
-    });
-    if (!dup) keep.push(box);
-  }
-  return keep;
-}
-
-async function detect(source, imgW, imgH) {
-  if (!loadedModel) return [];
-  const full = tf.browser.fromPixels(source);
-  const all = [];
-  let id = 0;
-  for (const tile of getTiles(imgW, imgH)) {
-    const t = tf.tidy(() => full.slice([tile.y, tile.x, 0], [tile.h, tile.w, 3]));
-    const r = runTile(t);
-    const [boxes, scores, classes] = await Promise.all([r[0].array(), r[1].data(), r[2].data()]);
-    tf.dispose(r);
-    t.dispose();
-    for (let i = 0; i < boxes.length; i++) {
-      if (scores[i] < CONFIDENCE_THRESHOLD) continue;
-      let [x1, y1, x2, y2] = boxes[i];
-      const pip = LABEL_MAP[classes[i]];
-      if (!pip) continue;
-      all.push({ id: id++, pipValue: pip, confidence: scores[i],
-        x: x1 * tile.w + tile.x, y: y1 * tile.h + tile.y,
-        w: (x2 - x1) * tile.w, h: (y2 - y1) * tile.h,
-        color: PIP_COLORS[pip % PIP_COLORS.length] });
-    }
-  }
-  full.dispose();
-  return mergeBoxes(all);
-}
-
-// ── Modal component ──────────────────────────────────────────────────────────
 export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -123,7 +10,7 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
   const loopRef = useRef(false);
 
   const [mode, setMode] = useState('choose'); // 'choose' | 'camera' | 'review' | 'manual'
-  const [modelReady, setModelReady] = useState(!!loadedModel);
+  const [modelReady, setModelReady] = useState(isModelLoaded());
   const [liveDetections, setLiveDetections] = useState([]);
   const [fps, setFps] = useState(0);
   const [capturedImage, setCapturedImage] = useState(null);
@@ -136,7 +23,7 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
   const reviewPips = detections.reduce((s, d) => s + d.pipValue, 0);
 
   useEffect(() => {
-    if (!loadedModel) {
+    if (!isModelLoaded()) {
       getModel().then(() => setModelReady(true)).catch(console.error);
     }
   }, []);
@@ -168,9 +55,9 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
     let lastFps = performance.now(), frames = 0;
     while (loopRef.current) {
       const v = videoRef.current;
-      if (!v || v.readyState < 2 || !loadedModel) { await tf.nextFrame(); continue; }
+      if (!v || v.readyState < 2 || !isModelLoaded()) { await tf.nextFrame(); continue; }
       try {
-        const r = await detect(v, v.videoWidth, v.videoHeight);
+        const r = await detectDominoes(v, v.videoWidth, v.videoHeight);
         if (!loopRef.current) break;
         setLiveDetections(r);
         frames++;
@@ -194,7 +81,6 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
     }
   };
 
-  // Attach stream once camera mode renders
   useEffect(() => {
     if (mode !== 'camera' || !streamRef.current || !videoRef.current) return;
     const v = videoRef.current;
@@ -224,10 +110,12 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
 
   const confirm = (value) => { onConfirm(String(value)); };
 
-  // ── Choose mode ────────────────────────────────────────────────────────────
+  // ── Choose mode ──────────────────────────────────────────────────────────────
   const ChooseScreen = () => (
     <div className="p-6 space-y-3">
-      <p className="text-sm text-gray-500 text-center mb-4">How would you like to enter <span className="font-bold text-gray-800">{player.name}'s</span> score?</p>
+      <p className="text-sm text-gray-500 text-center mb-4">
+        How would you like to enter <span className="font-bold text-gray-800">{player.name}'s</span> score?
+      </p>
       <button onClick={startCamera} disabled={!modelReady}
         className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-indigo-100 hover:border-indigo-400 hover:bg-indigo-50 transition disabled:opacity-50 text-left">
         <span className="text-2xl">📷</span>
@@ -247,7 +135,7 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
     </div>
   );
 
-  // ── Camera mode (fullscreen) ───────────────────────────────────────────────
+  // ── Camera mode (fullscreen) ─────────────────────────────────────────────────
   if (mode === 'camera') {
     return (
       <div className="fixed inset-0 z-50 bg-black flex flex-col">
@@ -276,7 +164,7 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
     );
   }
 
-  // ── Review mode ────────────────────────────────────────────────────────────
+  // ── Review mode ──────────────────────────────────────────────────────────────
   const ReviewScreen = () => (
     <div className="flex flex-col max-h-[85vh]">
       <div className="relative overflow-hidden rounded-t-2xl">
@@ -334,10 +222,12 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
     </div>
   );
 
-  // ── Manual entry ───────────────────────────────────────────────────────────
+  // ── Manual entry ─────────────────────────────────────────────────────────────
   const ManualScreen = () => (
     <div className="p-6 space-y-4">
-      <p className="text-sm text-gray-500 text-center">Enter pip count for <span className="font-bold text-gray-800">{player.name}</span></p>
+      <p className="text-sm text-gray-500 text-center">
+        Enter pip count for <span className="font-bold text-gray-800">{player.name}</span>
+      </p>
       <input autoFocus type="number" min="0" value={manualValue} onChange={e => setManualValue(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && manualValue !== '') confirm(+manualValue); }}
         placeholder="0"
@@ -352,7 +242,7 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
     </div>
   );
 
-  // ── Modal wrapper ──────────────────────────────────────────────────────────
+  // ── Modal wrapper ─────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onCancel}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />

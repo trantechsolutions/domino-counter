@@ -13,9 +13,7 @@ import {
 import { getDeviceId, getPlayerClaim, setPlayerClaim, clearPlayerClaim } from './lib/deviceId';
 import Lobby from './components/Lobby';
 import Scoreboard from './components/Scoreboard';
-import PipTracker from './components/PipTracker';
 import PlayerClaimScreen from './components/PlayerClaimScreen';
-import TabNav from './components/TabNav';
 
 const generateGameId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
 
@@ -24,7 +22,6 @@ export default function App() {
   const [gameData, setGameData] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('tracker');
   const [myPlayer, setMyPlayer] = useState(null);
   const [showPlayerClaim, setShowPlayerClaim] = useState(false);
 
@@ -39,7 +36,6 @@ export default function App() {
         if (docSnap.exists()) {
           localStorage.setItem('dominoLastGameId', upperId);
           setGameId(upperId);
-          setActiveTab('tracker');
           setError('');
           // Restore existing claim or prompt
           const claim = getPlayerClaim(upperId);
@@ -112,7 +108,6 @@ export default function App() {
     });
     localStorage.setItem('dominoLastGameId', newGameId);
     setGameId(newGameId);
-    setActiveTab('tracker');
     setShowPlayerClaim(true); // Host also needs to claim a player slot
     setIsLoading(false);
   };
@@ -150,7 +145,6 @@ export default function App() {
 
   const handleApplyPipScore = async (playerId, value) => {
     await handlePendingScoreWrite(playerId, value);
-    setActiveTab('tracker');
   };
 
   const handleSubmitScores = async () => {
@@ -215,28 +209,15 @@ export default function App() {
             onSkip={() => setShowPlayerClaim(false)}
           />
         ) : (
-          <div>
-            <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
-            {activeTab === 'tracker' && (
-              <Scoreboard
-                gameId={gameId}
-                gameData={gameData}
-                onLeaveGame={handleLeaveGame}
-                myPlayer={myPlayer}
-                isHost={isHost}
-                onPendingScoreWrite={handlePendingScoreWrite}
-                onSubmitScores={handleSubmitScores}
-              />
-            )}
-            {activeTab === 'pip_counter' && (
-              <PipTracker
-                gameData={gameData}
-                myPlayer={myPlayer}
-                isHost={isHost}
-                onApplyScore={handleApplyPipScore}
-              />
-            )}
-          </div>
+          <Scoreboard
+            gameId={gameId}
+            gameData={gameData}
+            onLeaveGame={handleLeaveGame}
+            myPlayer={myPlayer}
+            isHost={isHost}
+            onPendingScoreWrite={handlePendingScoreWrite}
+            onSubmitScores={handleSubmitScores}
+          />
         )}
 
         <footer className="text-center mt-8 pb-4 text-gray-300 text-xs">
