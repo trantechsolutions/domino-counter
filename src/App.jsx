@@ -135,12 +135,14 @@ export default function App() {
   };
 
   // Write a single player's pending score directly to Firestore
-  const handlePendingScoreWrite = async (playerId, value) => {
+  const handlePendingScoreWrite = async (playerId, value, isWinner = false) => {
     const parsed = parseInt(value, 10);
     if (isNaN(parsed)) return;
-    await updateDoc(doc(db, 'dominoGames', gameId), {
-      [`pendingScores.${playerId}`]: parsed,
-    });
+    const updates = { [`pendingScores.${playerId}`]: parsed };
+    if (isWinner) updates.pendingWinner = playerId;
+    // If this player was the winner but is re-entering a real score, clear the winner flag
+    if (!isWinner && gameData?.pendingWinner === playerId) updates.pendingWinner = null;
+    await updateDoc(doc(db, 'dominoGames', gameId), updates);
   };
 
   const handleApplyPipScore = async (playerId, value) => {
@@ -160,7 +162,7 @@ export default function App() {
     }
     const newRound = { roundNumber: gameData.rounds.length + 1, scores: finalScores };
     const allRounds = [...gameData.rounds, newRound];
-    const updates = { rounds: arrayUnion(newRound), pendingScores: {} };
+    const updates = { rounds: arrayUnion(newRound), pendingScores: {}, pendingWinner: null };
 
     if (allRounds.length >= 13 && !gameData.finished) {
       const totals = gameData.players.map((p) => ({

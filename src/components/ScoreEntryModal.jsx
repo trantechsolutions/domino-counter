@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import { getModel, isModelLoaded, detectDominoes, PIP_COLORS } from '../lib/pipDetect';
 
-export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
+export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCancel }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const overlayRef = useRef(null);
@@ -108,14 +108,34 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
-  const confirm = (value) => { onConfirm(String(value)); };
+  const confirm = (value, isWinner = false) => { onConfirm(String(value), isWinner); };
 
   // ── Choose mode ──────────────────────────────────────────────────────────────
-  const ChooseScreen = () => (
+  const ChooseScreen = () => {
+    const anotherPlayerIsWinner = pendingWinner && pendingWinner !== player.id;
+    const thisPlayerIsWinner = pendingWinner === player.id;
+    return (
     <div className="p-6 space-y-3">
       <p className="text-sm text-gray-500 text-center mb-4">
         How would you like to enter <span className="font-bold text-gray-800">{player.name}'s</span> score?
       </p>
+      <button onClick={() => !anotherPlayerIsWinner && confirm(0, true)}
+        disabled={anotherPlayerIsWinner}
+        className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 transition text-left ${
+          thisPlayerIsWinner
+            ? 'border-yellow-400 bg-yellow-100'
+            : anotherPlayerIsWinner
+            ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
+            : 'border-yellow-200 bg-yellow-50 hover:border-yellow-400 hover:bg-yellow-100'
+        }`}>
+        <span className="text-2xl">🏆</span>
+        <div>
+          <p className="font-semibold text-yellow-800">Round Winner — 0 pts</p>
+          <p className="text-xs text-yellow-600">
+            {anotherPlayerIsWinner ? 'Another player already won this round' : `${player.name} went out first`}
+          </p>
+        </div>
+      </button>
       <button onClick={startCamera} disabled={!modelReady}
         className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-indigo-100 hover:border-indigo-400 hover:bg-indigo-50 transition disabled:opacity-50 text-left">
         <span className="text-2xl">📷</span>
@@ -134,6 +154,7 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
       </button>
     </div>
   );
+  };
 
   // ── Camera mode (fullscreen) ─────────────────────────────────────────────────
   if (mode === 'camera') {

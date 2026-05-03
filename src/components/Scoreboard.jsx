@@ -430,8 +430,9 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
       {scoreModal && (
         <ScoreEntryModal
           player={scoreModal.player}
-          onConfirm={(value) => {
-            onPendingScoreWrite(scoreModal.player.id, value);
+          pendingWinner={gameData.pendingWinner}
+          onConfirm={(value, isWinner = false) => {
+            onPendingScoreWrite(scoreModal.player.id, value, isWinner);
             setScoreModal(null);
           }}
           onCancel={() => setScoreModal(null)}
