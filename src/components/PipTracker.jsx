@@ -4,8 +4,8 @@ import * as tf from '@tensorflow/tfjs';
 const MODEL_PATH = import.meta.env.BASE_URL + 'yolov5_custom/model.json';
 const CONFIDENCE_THRESHOLD = 0.8;
 const NMS_SCORE_THRESHOLD = 0.8;
-const NMS_IOU_THRESHOLD = 0.5;
-const TILE_OVERLAP = 0.25; // 25% overlap between tiles
+const NMS_IOU_THRESHOLD = 0.3;
+const TILE_OVERLAP = 0.25;
 
 const LABEL_MAP = {
   0: { name: 'pip-1', value: 1 },
@@ -110,7 +110,7 @@ function getTileRegions(imgWidth, imgHeight) {
 }
 
 // Client-side NMS to merge results across tiles
-function mergeDetections(allResults, iouThreshold = 0.4) {
+function mergeDetections(allResults, iouThreshold = 0.25) {
   const sorted = [...allResults].sort((a, b) => b.confidence - a.confidence);
   const keep = [];
   for (const box of sorted) {
