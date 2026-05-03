@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { db, doc, updateDoc, arrayUnion, deleteDoc } from '../lib/firebase';
 import { PlayerIcon, GoldMedalIcon, TrophyIcon, LockIcon } from './Icons';
+import { getDeviceId } from '../lib/deviceId';
 import ScoreEntryModal from './ScoreEntryModal';
 
 // Mexican Train: 13 rounds, starting at double-12 down to double-0
@@ -158,6 +159,19 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
               End Game
             </button>
           ) : null}
+          {!isHost && (
+            <button
+              onClick={() => {
+                if (confirm('Claim host on this device? You will be able to submit rounds and manage the game.')) {
+                  updateDoc(doc(db, 'dominoGames', gameId), { hostDeviceId: getDeviceId() });
+                }
+              }}
+              className="text-sm text-indigo-500 font-semibold py-1.5 px-3 rounded-lg hover:bg-indigo-50 active:bg-indigo-100 transition"
+              title="Claim host"
+            >
+              Claim Host
+            </button>
+          )}
           <button
             onClick={handleDeleteGame}
             className="text-sm text-red-400 font-semibold py-1.5 px-3 rounded-lg hover:bg-red-50 hover:text-red-600 active:bg-red-100 transition"
