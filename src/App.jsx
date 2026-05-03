@@ -96,7 +96,19 @@ export default function App() {
     if (!gameId) return;
     const unsub = onSnapshot(doc(db, 'dominoGames', gameId), (docSnap) => {
       if (docSnap.exists()) {
-        setGameData(docSnap.data());
+        const data = docSnap.data();
+        setGameData(data);
+
+        // Backwards-compat: validate stored claim still exists in the player list.
+        // If the player was removed or the game pre-dates claims, re-prompt.
+        const claim = getPlayerClaim(gameId);
+        if (claim && !showPlayerClaim) {
+          const stillExists = (data.players || []).some((p) => p.id === claim.id);
+          if (!stillExists) {
+            setMyPlayer(null);
+            setShowPlayerClaim(true);
+          }
+        }
       } else {
         setError(`Game with ID ${gameId} not found.`);
         setGameId(null);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db, auth, collection, getDocs, doc, deleteDoc, signInWithEmailAndPassword } from '../lib/firebase';
 import { LockIcon } from './Icons';
+import UpdateLog from './UpdateLog';
 
 function formatDate(ts) {
   if (!ts) return '';
@@ -200,6 +201,11 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
           )}
         </div>
       )}
+
+      {/* Update log */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <UpdateLog />
+      </div>
 
       {/* Admin auth footer */}
       <div className="text-center">
