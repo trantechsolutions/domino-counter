@@ -1,271 +1,59 @@
-import { useState, useEffect } from 'react';
-import {
-  auth,
-  db,
-  signInAnonymously,
-  onAuthStateChanged,
-  signOut,
-  doc,
-  setDoc,
-  getDoc,
-  onSnapshot,
-  updateDoc,
-  arrayUnion,
-} from './lib/firebase';
-import { getDeviceId, getPlayerClaim, setPlayerClaim, clearPlayerClaim } from './lib/deviceId';
-import Lobby from './components/Lobby';
-import Scoreboard from './components/Scoreboard';
-import PlayerClaimScreen from './components/PlayerClaimScreen';
-
-const generateGameId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+import { Routes, Route, Link } from 'react-router-dom';
+import { useTheme } from './lib/useTheme';
+import LobbyPage from './pages/LobbyPage';
+import GamePage from './pages/GamePage';
 
 export default function App() {
-  const [gameId, setGameId] = useState(null);
-  const [gameData, setGameData] = useState(null);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [myPlayer, setMyPlayer] = useState(null);
-  const [showPlayerClaim, setShowPlayerClaim] = useState(false);
-  const [authUser, setAuthUser] = useState(null);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-
-  // Derived: is the current device the host?
-  const isHost = !gameData?.hostDeviceId || gameData.hostDeviceId === getDeviceId();
-
-  const handleJoinGame = (id, isAutoJoin = false) => {
-    setIsLoading(true);
-    const upperId = id.toUpperCase();
-    getDoc(doc(db, 'dominoGames', upperId))
-      .then((docSnap) => {
-        if (docSnap.exists()) {
-          localStorage.setItem('dominoLastGameId', upperId);
-          setGameId(upperId);
-          setError('');
-          // Restore existing claim or prompt
-          const claim = getPlayerClaim(upperId);
-          if (claim) {
-            setMyPlayer(claim);
-            setShowPlayerClaim(false);
-          } else {
-            setShowPlayerClaim(true);
-          }
-        } else {
-          if (!isAutoJoin) setError('Game not found.');
-          localStorage.removeItem('dominoLastGameId');
-        }
-      })
-      .catch(() => {
-        if (!isAutoJoin) setError('Error checking game ID.');
-      })
-      .finally(() => setIsLoading(false));
-  };
-
-  useEffect(() => {
-    let authReady = false;
-
-    const unsubAuth = onAuthStateChanged(auth, async (user) => {
-      if (user && !user.isAnonymous) {
-        setAuthUser(user);
-        const adminSnap = await getDoc(doc(db, 'admins', user.uid));
-        setIsSuperAdmin(adminSnap.exists());
-      } else {
-        setAuthUser(null);
-        setIsSuperAdmin(false);
-        if (!user) {
-          await signInAnonymously(auth).catch(() => setError('Authentication failed. Please refresh.'));
-          return; // the anonymous sign-in will re-trigger onAuthStateChanged
-        }
-      }
-
-      // Auto-rejoin runs once, after auth is confirmed ready
-      if (!authReady) {
-        authReady = true;
-        const lastGameId = localStorage.getItem('dominoLastGameId');
-        if (lastGameId) {
-          handleJoinGame(lastGameId, true);
-        } else {
-          setIsLoading(false);
-        }
-      }
-    });
-
-    return () => unsubAuth();
-  }, []);
-
-  useEffect(() => {
-    if (!gameId) return;
-    const unsub = onSnapshot(doc(db, 'dominoGames', gameId), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setGameData(data);
-
-        // Backwards-compat: validate stored claim still exists in the player list.
-        // If the player was removed or the game pre-dates claims, re-prompt.
-        const claim = getPlayerClaim(gameId);
-        if (claim && !showPlayerClaim) {
-          const stillExists = (data.players || []).some((p) => p.id === claim.id);
-          if (!stillExists) {
-            setMyPlayer(null);
-            setShowPlayerClaim(true);
-          }
-        }
-      } else {
-        setError(`Game with ID ${gameId} not found.`);
-        setGameId(null);
-        setMyPlayer(null);
-        setShowPlayerClaim(false);
-        localStorage.removeItem('dominoLastGameId');
-      }
-    });
-    return () => unsub();
-  }, [gameId]);
-
-  // Sync myPlayer name if host renames the player in Firestore
-  useEffect(() => {
-    if (!myPlayer || !gameData?.players) return;
-    const updated = gameData.players.find((p) => p.id === myPlayer.id);
-    if (updated && updated.name !== myPlayer.name) {
-      const newClaim = { ...myPlayer, name: updated.name };
-      setMyPlayer(newClaim);
-      setPlayerClaim(gameId, newClaim);
-    }
-  }, [gameData?.players]);
-
-  const handleCreateGame = async () => {
-    setIsLoading(true);
-    const newGameId = generateGameId();
-    await setDoc(doc(db, 'dominoGames', newGameId), {
-      createdAt: new Date(),
-      players: [],
-      rounds: [],
-      hostDeviceId: getDeviceId(),
-      pendingScores: {},
-      deviceClaims: {},
-    });
-    localStorage.setItem('dominoLastGameId', newGameId);
-    setGameId(newGameId);
-    setShowPlayerClaim(true); // Host also needs to claim a player slot
-    setIsLoading(false);
-  };
-
-  const handleLeaveGame = () => {
-    localStorage.removeItem('dominoLastGameId');
-    setGameId(null);
-    setGameData(null);
-    setMyPlayer(null);
-    setShowPlayerClaim(false);
-    setError('');
-  };
-
-  const handleClaim = async (player) => {
-    setPlayerClaim(gameId, player);
-    setMyPlayer(player);
-    setShowPlayerClaim(false);
-    await updateDoc(doc(db, 'dominoGames', gameId), {
-      [`deviceClaims.${player.id}`]: {
-        claimedAt: new Date(),
-        deviceHint: getDeviceId().slice(0, 6),
-      },
-    });
-  };
-
-  // Write a single player's pending score directly to Firestore
-  const handlePendingScoreWrite = async (playerId, value, isWinner = false) => {
-    const parsed = parseInt(value, 10);
-    if (isNaN(parsed)) return;
-    const updates = { [`pendingScores.${playerId}`]: parsed };
-    if (isWinner) updates.pendingWinner = playerId;
-    // If this player was the winner but is re-entering a real score, clear the winner flag
-    if (!isWinner && gameData?.pendingWinner === playerId) updates.pendingWinner = null;
-    await updateDoc(doc(db, 'dominoGames', gameId), updates);
-  };
-
-  const handleApplyPipScore = async (playerId, value) => {
-    await handlePendingScoreWrite(playerId, value);
-  };
-
-  const handleSubmitScores = async () => {
-    const pending = gameData.pendingScores || {};
-    const finalScores = {};
-    for (const player of gameData.players) {
-      const val = pending[player.id];
-      if (val === undefined || val === null || isNaN(val)) {
-        alert(`Missing score for ${player.name}. All players must enter a score first.`);
-        return;
-      }
-      finalScores[player.id] = val;
-    }
-    const newRound = { roundNumber: gameData.rounds.length + 1, scores: finalScores };
-    const allRounds = [...gameData.rounds, newRound];
-    const updates = { rounds: arrayUnion(newRound), pendingScores: {}, pendingWinner: null };
-
-    if (allRounds.length >= 13 && !gameData.finished) {
-      const totals = gameData.players.map((p) => ({
-        name: p.name,
-        total: allRounds.reduce((sum, r) => sum + (r.scores[p.id] || 0), 0),
-      }));
-      totals.sort((a, b) => a.total - b.total);
-      updates.finished = true;
-      updates.winner = totals[0].name;
-      updates.finishedAt = new Date();
-    }
-
-    await updateDoc(doc(db, 'dominoGames', gameId), updates);
-  };
-
-  if (isLoading && !gameId) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950">
-        <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const { theme, toggle: toggleTheme } = useTheme();
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-950 min-h-screen font-sans">
-      <div className="mx-auto px-4 py-4 sm:py-6 max-w-2xl">
-        <header className="text-center mb-5 sm:mb-6">
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-800 dark:text-gray-100">Domino Suite</h1>
-          <p className="text-gray-400 dark:text-gray-500 text-sm mt-0.5">Score Tracking & Pip Counting</p>
+    <div className="min-h-screen font-sans bg-slate-50 dark:bg-[#0b0a14]">
+      {/* Ambient gradient blobs */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
+        <div className="absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full bg-violet-600/10 dark:bg-violet-600/5 blur-3xl" />
+        <div className="absolute top-1/2 -right-40 w-[400px] h-[400px] rounded-full bg-indigo-500/8 dark:bg-indigo-500/4 blur-3xl" />
+      </div>
+
+      <div className="relative mx-auto px-4 py-5 sm:py-8 max-w-2xl">
+        <header className="mb-6 sm:mb-8">
+          <div className="flex items-center justify-between w-full">
+            <Link to="/" className="flex items-center gap-3 group">
+              <div className="grad-brand w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/30 shrink-0 group-hover:opacity-90 transition-opacity">
+                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="2" y="2" width="9" height="20" rx="2" />
+                  <rect x="13" y="2" width="9" height="20" rx="2" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50 leading-none">Domino Suite</h1>
+                <p className="text-slate-400 dark:text-slate-500 text-xs mt-0.5 font-medium">Score Tracking · Pip Counter</p>
+              </div>
+            </Link>
+            <button
+              onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
+            >
+              {theme === 'dark' ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              )}
+            </button>
+          </div>
         </header>
 
-        {error && (
-          <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 mb-4 rounded-xl text-sm" role="alert">
-            {error}
-          </div>
-        )}
+        <Routes>
+          <Route path="/" element={<LobbyPage />} />
+          <Route path="/:gameId" element={<GamePage />} />
+        </Routes>
 
-        {!gameId ? (
-          <Lobby
-            onCreateGame={handleCreateGame}
-            onJoinGame={handleJoinGame}
-            isLoading={isLoading}
-            authUser={authUser}
-            isSuperAdmin={isSuperAdmin}
-            onSignOut={() => { signOut(auth); setAuthUser(null); setIsSuperAdmin(false); }}
-          />
-        ) : showPlayerClaim ? (
-          <PlayerClaimScreen
-            gameId={gameId}
-            gameData={gameData}
-            isHost={isHost}
-            onClaim={handleClaim}
-            onSkip={() => setShowPlayerClaim(false)}
-          />
-        ) : (
-          <Scoreboard
-            gameId={gameId}
-            gameData={gameData}
-            onLeaveGame={handleLeaveGame}
-            myPlayer={myPlayer}
-            isHost={isHost}
-            onPendingScoreWrite={handlePendingScoreWrite}
-            onSubmitScores={handleSubmitScores}
-          />
-        )}
-
-        <footer className="text-center mt-8 pb-4 text-gray-300 dark:text-gray-700 text-xs">
-          Built with React & Firebase
+        <footer className="text-center mt-10 pb-6 text-slate-400 dark:text-slate-600 text-xs">
+          Built with React &amp; Firebase
         </footer>
       </div>
     </div>

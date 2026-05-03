@@ -61,16 +61,17 @@ export default function UpdateLog() {
     <div>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition"
+        aria-expanded={open}
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition"
       >
         <div className="flex items-center gap-2">
-          <span className="font-bold text-gray-800 dark:text-gray-100 text-sm">What's New</span>
-          <span className="text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-semibold px-2 py-0.5 rounded-full">
+          <span className="text-sm font-bold text-slate-700 dark:text-slate-200">What's New</span>
+          <span className="text-[10px] bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
             v{UPDATES[0].version}
           </span>
         </div>
         <svg
-          className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
           fill="none" stroke="currentColor" viewBox="0 0 24 24"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
@@ -78,17 +79,22 @@ export default function UpdateLog() {
       </button>
 
       {open && (
-        <div className="border-t border-gray-100 dark:border-gray-800 divide-y divide-gray-50 dark:divide-gray-800 max-h-80 overflow-y-auto">
-          {UPDATES.map((release) => (
+        <div className="border-t border-slate-100 dark:border-slate-800 divide-y divide-slate-50 dark:divide-slate-800/60 max-h-72 overflow-y-auto">
+          {UPDATES.map((release, i) => (
             <div key={release.version} className="px-5 py-4">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-300">v{release.version}</span>
-                <span className="text-xs text-gray-400 dark:text-gray-500">{release.date}</span>
+                <span className={`text-xs font-bold ${i === 0 ? 'text-violet-600 dark:text-violet-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                  v{release.version}
+                </span>
+                <span className="text-xs text-slate-400 dark:text-slate-500">{release.date}</span>
+                {i === 0 && (
+                  <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Latest</span>
+                )}
               </div>
-              <ul className="space-y-1">
-                {release.changes.map((change, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-400">
-                    <span className="text-indigo-400 dark:text-indigo-500 mt-0.5 shrink-0">·</span>
+              <ul className="space-y-1.5">
+                {release.changes.map((change, j) => (
+                  <li key={j} className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="text-violet-400 dark:text-violet-500 mt-px shrink-0">·</span>
                     {change}
                   </li>
                 ))}

@@ -48,4 +48,7 @@ export default defineConfig({
     }),
   ],
   base: '/',
+  preview: {
+    historyApiFallback: true,
+  },
 })

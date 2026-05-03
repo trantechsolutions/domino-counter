@@ -115,41 +115,41 @@ export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCa
     const anotherPlayerIsWinner = pendingWinner && pendingWinner !== player.id;
     const thisPlayerIsWinner = pendingWinner === player.id;
     return (
-      <div className="p-6 space-y-3">
-        <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
-          How would you like to enter <span className="font-bold text-gray-800 dark:text-gray-100">{player.name}'s</span> score?
+      <div className="p-5 space-y-2.5">
+        <p className="text-sm text-slate-500 dark:text-slate-400 text-center mb-4">
+          How would you like to enter <span className="font-bold text-slate-800 dark:text-slate-100">{player.name}'s</span> score?
         </p>
         <button onClick={() => !anotherPlayerIsWinner && confirm(0, true)}
           disabled={anotherPlayerIsWinner}
-          className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 transition text-left ${
+          className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 transition text-left active:scale-[0.99] ${
             thisPlayerIsWinner
-              ? 'border-yellow-400 dark:border-yellow-600 bg-yellow-100 dark:bg-yellow-900/40'
+              ? 'border-amber-400 dark:border-amber-600/80 bg-amber-100 dark:bg-amber-950/40'
               : anotherPlayerIsWinner
-              ? 'border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 opacity-40 cursor-not-allowed'
-              : 'border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 hover:border-yellow-400 dark:hover:border-yellow-600 hover:bg-yellow-100 dark:hover:bg-yellow-900/40'
+              ? 'border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 opacity-40 cursor-not-allowed'
+              : 'border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/20 hover:border-amber-400 dark:hover:border-amber-600/80 hover:bg-amber-100 dark:hover:bg-amber-950/40'
           }`}>
-          <span className="text-2xl">🏆</span>
+          <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0 text-xl">🏆</div>
           <div>
-            <p className="font-semibold text-yellow-800 dark:text-yellow-400">Round Winner — 0 pts</p>
-            <p className="text-xs text-yellow-600 dark:text-yellow-500">
+            <p className="font-semibold text-sm text-amber-800 dark:text-amber-400">Round Winner — 0 pts</p>
+            <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
               {anotherPlayerIsWinner ? 'Another player already won this round' : `${player.name} went out first`}
             </p>
           </div>
         </button>
         <button onClick={startCamera} disabled={!modelReady}
-          className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-indigo-100 dark:border-indigo-900 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition disabled:opacity-50 text-left">
-          <span className="text-2xl">📷</span>
+          className="w-full flex items-center gap-3 p-4 rounded-2xl border-2 border-violet-200 dark:border-violet-900/50 hover:border-violet-400 dark:hover:border-violet-600/80 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition disabled:opacity-50 text-left active:scale-[0.99]">
+          <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center shrink-0 text-xl">📷</div>
           <div>
-            <p className="font-semibold text-gray-800 dark:text-gray-100">Scan Dominoes</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">{modelReady ? 'AI pip detection' : 'Loading model...'}</p>
+            <p className="font-semibold text-sm text-slate-800 dark:text-slate-100">Scan Dominoes</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{modelReady ? 'AI pip detection' : 'Loading model...'}</p>
           </div>
         </button>
         <button onClick={() => setMode('manual')}
-          className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-gray-100 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition text-left">
-          <span className="text-2xl">✏️</span>
+          className="w-full flex items-center gap-3 p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-left active:scale-[0.99]">
+          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 text-xl">✏️</div>
           <div>
-            <p className="font-semibold text-gray-800 dark:text-gray-100">Enter Manually</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Type the pip count</p>
+            <p className="font-semibold text-sm text-slate-800 dark:text-slate-100">Enter Manually</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Type the pip count</p>
           </div>
         </button>
       </div>
@@ -244,20 +244,20 @@ export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCa
 
   // ── Manual entry ─────────────────────────────────────────────────────────────
   const ManualScreen = () => (
-    <div className="p-6 space-y-4">
-      <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
-        Enter pip count for <span className="font-bold text-gray-800 dark:text-gray-100">{player.name}</span>
+    <div className="p-5 space-y-4">
+      <p className="text-sm text-slate-500 dark:text-slate-400 text-center">
+        Enter pip count for <span className="font-bold text-slate-800 dark:text-slate-100">{player.name}</span>
       </p>
       <input autoFocus type="number" min="0" value={manualValue}
         onChange={e => setManualValue(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && manualValue !== '') confirm(+manualValue); }}
         placeholder="0"
-        className="w-full text-center text-4xl font-bold p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100" />
+        className="w-full text-center text-5xl font-extrabold py-5 border-2 border-slate-200 dark:border-slate-700 rounded-2xl focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 tabular-nums transition" />
       <button onClick={() => confirm(+manualValue)} disabled={manualValue === ''}
-        className="w-full bg-green-600 text-white font-semibold py-3 rounded-xl hover:bg-green-700 active:bg-green-800 transition disabled:opacity-50">
+        className="w-full bg-emerald-600 text-white font-semibold py-3 rounded-xl hover:bg-emerald-500 active:bg-emerald-700 transition disabled:opacity-50 shadow-md shadow-emerald-500/20">
         Apply {manualValue || 0} to {player.name}
       </button>
-      <button onClick={() => setMode('choose')} className="w-full text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition py-1">
+      <button onClick={() => setMode('choose')} className="w-full text-sm text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition py-1">
         ← Back
       </button>
     </div>
@@ -269,15 +269,29 @@ export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCa
   // ── Modal wrapper ─────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onCancel}>
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="relative w-full sm:max-w-md bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
-          <h2 className="font-bold text-gray-800 dark:text-gray-100">{player.name}'s Score</h2>
-          <button onClick={onCancel} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition p-1">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className="relative w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden slide-up sm:scale-in"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Drag pill (mobile) */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="w-10 h-1 rounded-full bg-slate-200 dark:bg-slate-700" />
+        </div>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <h2 className="font-bold text-slate-800 dark:text-slate-100 text-sm">{player.name}'s Score</h2>
+          </div>
+          <button onClick={onCancel} aria-label="Close"
+            className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
-        {error && <div className="mx-4 mt-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg text-sm">{error}</div>}
+        {error && (
+          <div className="mx-4 mt-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-400 px-3 py-2 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
         {mode === 'choose' && <ChooseScreen />}
         {mode === 'manual' && <ManualScreen />}
       </div>
