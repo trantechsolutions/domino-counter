@@ -130,7 +130,6 @@ export default function App() {
   };
 
   const handleLeaveGame = () => {
-    if (gameId) clearPlayerClaim(gameId);
     localStorage.removeItem('dominoLastGameId');
     setGameId(null);
     setGameData(null);
