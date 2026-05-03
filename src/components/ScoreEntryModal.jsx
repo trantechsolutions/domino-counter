@@ -164,60 +164,66 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
     );
   }
 
-  // ── Review mode ──────────────────────────────────────────────────────────────
+  // ── Review mode (fullscreen) ─────────────────────────────────────────────────
   const ReviewScreen = () => (
-    <div className="flex flex-col max-h-[85vh]">
-      <div className="relative overflow-hidden rounded-t-2xl">
-        <img src={capturedImage} alt="capture" className="w-full h-auto block max-h-52 object-contain bg-gray-900" />
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Full-screen captured image with SVG bounding boxes */}
+      <div className="relative flex-1 min-h-0">
+        <img src={capturedImage} alt="capture" className="w-full h-full object-contain" />
         <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${capturedDims.w} ${capturedDims.h}`} preserveAspectRatio="xMidYMid meet">
           {detections.filter(d => !d.manual).map(d => (
             <g key={d.id}>
-              <rect x={d.x} y={d.y} width={d.w} height={d.h} fill="none" stroke={d.color} strokeWidth={Math.max(2, capturedDims.w / 300)} />
-              <rect x={d.x} y={d.y - Math.max(18, capturedDims.h / 35)} width={Math.max(50, capturedDims.w / 10)} height={Math.max(18, capturedDims.h / 35)} fill={d.color} />
-              <text x={d.x + 3} y={d.y - 3} fill="white" fontSize={Math.max(12, capturedDims.h / 45)} fontFamily="sans-serif">
+              <rect x={d.x} y={d.y} width={d.w} height={d.h} fill="none" stroke={d.color} strokeWidth={Math.max(3, capturedDims.w / 200)} />
+              <rect x={d.x} y={d.y - Math.max(22, capturedDims.h / 28)} width={Math.max(60, capturedDims.w / 8)} height={Math.max(22, capturedDims.h / 28)} fill={d.color} />
+              <text x={d.x + 4} y={d.y - 4} fill="white" fontSize={Math.max(14, capturedDims.h / 36)} fontFamily="sans-serif" fontWeight="bold">
                 pip-{d.pipValue}
               </text>
             </g>
           ))}
         </svg>
-      </div>
 
-      <div className="p-4 flex items-center justify-between border-b border-gray-100">
-        <div>
-          <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Total Pips</p>
-          <p className="text-4xl font-extrabold text-indigo-600">{reviewPips}</p>
+        {/* Top HUD: pip count + player label */}
+        <div className="absolute top-3 left-3 bg-black/70 text-white px-3 py-1.5 rounded-lg flex items-center gap-2">
+          <span className="text-xl font-extrabold text-indigo-400">{reviewPips}</span>
+          <span className="text-xs text-gray-300">pips — {player.name}</span>
         </div>
+
+        {/* Retake button top-right */}
         <button onClick={() => { setCapturedImage(null); setDetections([]); startCamera(); }}
-          className="text-sm text-gray-500 font-semibold py-2 px-4 rounded-lg hover:bg-gray-100 transition">
+          className="absolute top-3 right-3 bg-black/70 text-white text-sm font-semibold py-1.5 px-4 rounded-lg hover:bg-gray-700 transition">
           Retake
         </button>
       </div>
 
-      <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
-        {detections.map(d => (
-          <div key={d.id} className="flex items-center gap-3 px-4 py-2.5">
-            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-            <select value={d.pipValue} onChange={e => setDetections(prev => prev.map(x => x.id === d.id ? { ...x, pipValue: +e.target.value } : x))}
-              className="p-1 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-              {Array.from({ length: 13 }, (_, i) => <option key={i} value={i}>pip-{i} ({i} pts)</option>)}
-            </select>
-            {!d.manual && <span className="text-xs text-gray-400">{(d.confidence * 100).toFixed(0)}%</span>}
-            <button onClick={() => setDetections(prev => prev.filter(x => x.id !== d.id))} className="ml-auto text-gray-300 hover:text-red-500 p-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          </div>
-        ))}
-        <button onClick={() => setDetections(prev => [...prev, { id: Date.now(), pipValue: 0, confidence: 1, x: 0, y: 0, w: 0, h: 0, color: PIP_COLORS[0], manual: true }])}
-          className="w-full text-xs text-indigo-600 font-semibold py-2.5 hover:bg-indigo-50 transition">
-          + Add manually
-        </button>
-      </div>
+      {/* Bottom panel: detection list + apply button */}
+      <div className="bg-gray-950 text-white flex flex-col max-h-[45vh]">
+        <div className="overflow-y-auto flex-1 divide-y divide-gray-800">
+          {detections.map(d => (
+            <div key={d.id} className="flex items-center gap-3 px-4 py-2.5">
+              <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+              <select value={d.pipValue}
+                onChange={e => setDetections(prev => prev.map(x => x.id === d.id ? { ...x, pipValue: +e.target.value } : x))}
+                className="bg-gray-800 text-white p-1.5 border border-gray-600 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                {Array.from({ length: 13 }, (_, i) => <option key={i} value={i}>pip-{i} ({i} pts)</option>)}
+              </select>
+              {!d.manual && <span className="text-xs text-gray-400">{(d.confidence * 100).toFixed(0)}%</span>}
+              <button onClick={() => setDetections(prev => prev.filter(x => x.id !== d.id))} className="ml-auto text-gray-500 hover:text-red-400 p-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          ))}
+          <button onClick={() => setDetections(prev => [...prev, { id: Date.now(), pipValue: 0, confidence: 1, x: 0, y: 0, w: 0, h: 0, color: PIP_COLORS[0], manual: true }])}
+            className="w-full text-xs text-indigo-400 font-semibold py-2.5 hover:bg-gray-800 transition">
+            + Add manually
+          </button>
+        </div>
 
-      <div className="p-4 border-t border-gray-100">
-        <button onClick={() => confirm(reviewPips)}
-          className="w-full bg-green-600 text-white font-semibold py-3 rounded-xl hover:bg-green-700 active:bg-green-800 transition">
-          Apply {reviewPips} to {player.name}
-        </button>
+        <div className="p-4 border-t border-gray-800">
+          <button onClick={() => confirm(reviewPips)}
+            className="w-full bg-green-600 text-white font-bold py-4 rounded-xl text-lg hover:bg-green-500 active:bg-green-700 transition">
+            Apply {reviewPips} pips → {player.name}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -242,6 +248,9 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
     </div>
   );
 
+  // ── Review mode short-circuit (fullscreen, like camera) ──────────────────────
+  if (mode === 'review') return <ReviewScreen />;
+
   // ── Modal wrapper ─────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onCancel}>
@@ -255,7 +264,6 @@ export default function ScoreEntryModal({ player, onConfirm, onCancel }) {
         </div>
         {error && <div className="mx-4 mt-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{error}</div>}
         {mode === 'choose' && <ChooseScreen />}
-        {mode === 'review' && <ReviewScreen />}
         {mode === 'manual' && <ManualScreen />}
       </div>
     </div>
