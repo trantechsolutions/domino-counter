@@ -61,7 +61,8 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Track named sign-ins (super admin) and fall back to anonymous for everyone else
+    let authReady = false;
+
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
       if (user && !user.isAnonymous) {
         setAuthUser(user);
@@ -70,17 +71,23 @@ export default function App() {
       } else {
         setAuthUser(null);
         setIsSuperAdmin(false);
-        // Ensure anonymous session exists for Firestore access
-        if (!user) signInAnonymously(auth).catch(() => setError('Authentication failed. Please refresh.'));
+        if (!user) {
+          await signInAnonymously(auth).catch(() => setError('Authentication failed. Please refresh.'));
+          return; // the anonymous sign-in will re-trigger onAuthStateChanged
+        }
+      }
+
+      // Auto-rejoin runs once, after auth is confirmed ready
+      if (!authReady) {
+        authReady = true;
+        const lastGameId = localStorage.getItem('dominoLastGameId');
+        if (lastGameId) {
+          handleJoinGame(lastGameId, true);
+        } else {
+          setIsLoading(false);
+        }
       }
     });
-
-    const lastGameId = localStorage.getItem('dominoLastGameId');
-    if (lastGameId) {
-      handleJoinGame(lastGameId, true);
-    } else {
-      setIsLoading(false);
-    }
 
     return () => unsubAuth();
   }, []);
