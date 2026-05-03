@@ -3,6 +3,8 @@ import {
   auth,
   db,
   signInAnonymously,
+  onAuthStateChanged,
+  signOut,
   doc,
   setDoc,
   getDoc,
@@ -24,6 +26,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [myPlayer, setMyPlayer] = useState(null);
   const [showPlayerClaim, setShowPlayerClaim] = useState(false);
+  const [authUser, setAuthUser] = useState(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   // Derived: is the current device the host?
   const isHost = !gameData?.hostDeviceId || gameData.hostDeviceId === getDeviceId();
@@ -56,8 +60,18 @@ export default function App() {
   };
 
   useEffect(() => {
-    signInAnonymously(auth).catch(() => {
-      setError('Authentication failed. Please refresh.');
+    // Track named sign-ins (super admin) and fall back to anonymous for everyone else
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (user && !user.isAnonymous) {
+        setAuthUser(user);
+        const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+        setIsSuperAdmin(adminSnap.exists());
+      } else {
+        setAuthUser(null);
+        setIsSuperAdmin(false);
+        // Ensure anonymous session exists for Firestore access
+        if (!user) signInAnonymously(auth).catch(() => setError('Authentication failed. Please refresh.'));
+      }
     });
 
     const lastGameId = localStorage.getItem('dominoLastGameId');
@@ -66,6 +80,8 @@ export default function App() {
     } else {
       setIsLoading(false);
     }
+
+    return () => unsubAuth();
   }, []);
 
   useEffect(() => {
@@ -201,7 +217,14 @@ export default function App() {
         )}
 
         {!gameId ? (
-          <Lobby onCreateGame={handleCreateGame} onJoinGame={handleJoinGame} isLoading={isLoading} />
+          <Lobby
+            onCreateGame={handleCreateGame}
+            onJoinGame={handleJoinGame}
+            isLoading={isLoading}
+            authUser={authUser}
+            isSuperAdmin={isSuperAdmin}
+            onSignOut={() => { signOut(auth); setAuthUser(null); setIsSuperAdmin(false); }}
+          />
         ) : showPlayerClaim ? (
           <PlayerClaimScreen
             gameId={gameId}
