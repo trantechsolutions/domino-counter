@@ -3,8 +3,8 @@ import { db, doc, updateDoc, arrayUnion, deleteDoc } from '../lib/firebase';
 import { PlayerIcon, GoldMedalIcon, TrophyIcon, LockIcon } from './Icons';
 import { getDeviceId } from '../lib/deviceId';
 import ScoreEntryModal from './ScoreEntryModal';
+import ConfirmDialog from './ConfirmDialog';
 
-// Mexican Train: 13 rounds, starting at double-12 down to double-0
 const roundLabel = (roundIndex) => `R${12 - roundIndex}`;
 
 export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, isHost, onPendingScoreWrite, onSubmitScores }) {
@@ -14,24 +14,20 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
   const [editingScore, setEditingScore] = useState(null);
   const [editScoreValue, setEditScoreValue] = useState('');
   const [scoreModal, setScoreModal] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const isFinished = gameData?.finished || false;
 
   const rankedPlayers = useMemo(() => {
     if (!gameData?.players) return [];
     const totals = gameData.players.map((player) => {
-      const totalScore = gameData.rounds.reduce(
-        (acc, round) => acc + (round.scores[player.id] || 0),
-        0
-      );
+      const totalScore = gameData.rounds.reduce((acc, round) => acc + (round.scores[player.id] || 0), 0);
       return { ...player, totalScore };
     });
     totals.sort((a, b) => a.totalScore - b.totalScore);
     let rank = 1;
     return totals.map((player, index) => {
-      if (index > 0 && player.totalScore > totals[index - 1].totalScore) {
-        rank = index + 1;
-      }
+      if (index > 0 && player.totalScore > totals[index - 1].totalScore) rank = index + 1;
       return { ...player, rank };
     });
   }, [gameData]);
@@ -52,9 +48,7 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
 
   const saveEditName = async () => {
     if (!editNameValue.trim() || !editingName) { setEditingName(null); return; }
-    const updatedPlayers = gameData.players.map((p) =>
-      p.id === editingName ? { ...p, name: editNameValue.trim() } : p
-    );
+    const updatedPlayers = gameData.players.map((p) => p.id === editingName ? { ...p, name: editNameValue.trim() } : p);
     await updateDoc(doc(db, 'dominoGames', gameId), { players: updatedPlayers });
     setEditingName(null);
   };
@@ -70,49 +64,68 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
     const { roundIndex, playerId } = editingScore;
     const parsed = parseInt(editScoreValue, 10);
     if (isNaN(parsed)) { setEditingScore(null); return; }
-    const updatedRounds = gameData.rounds.map((r, i) =>
-      i !== roundIndex ? r : { ...r, scores: { ...r.scores, [playerId]: parsed } }
-    );
+    const updatedRounds = gameData.rounds.map((r, i) => i !== roundIndex ? r : { ...r, scores: { ...r.scores, [playerId]: parsed } });
     await updateDoc(doc(db, 'dominoGames', gameId), { rounds: updatedRounds });
     setEditingScore(null);
   };
 
-  const handleEndGame = async () => {
+  const handleEndGame = () => {
     if (rankedPlayers.length === 0) return;
     const winnerName = rankedPlayers[0].name;
-    if (!confirm(`End game and crown ${winnerName} as the winner?`)) return;
-    await updateDoc(doc(db, 'dominoGames', gameId), { finished: true, winner: winnerName, finishedAt: new Date() });
+    setConfirmDialog({
+      title: 'End Game',
+      message: `Crown ${winnerName} as the winner? This will lock the scoreboard.`,
+      confirmLabel: 'End Game',
+      variant: 'brand',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        await updateDoc(doc(db, 'dominoGames', gameId), { finished: true, winner: winnerName, finishedAt: new Date() });
+      },
+    });
   };
 
   const handleReopenGame = async () => {
     await updateDoc(doc(db, 'dominoGames', gameId), { finished: false, winner: null, finishedAt: null });
   };
 
-  const handleDeleteGame = async () => {
-    if (!confirm(`Delete game ${gameId}? This cannot be undone.`)) return;
-    await deleteDoc(doc(db, 'dominoGames', gameId));
-    onLeaveGame();
+  const handleDeleteGame = () => {
+    setConfirmDialog({
+      title: 'Delete Game',
+      message: `Delete game ${gameId}? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        await deleteDoc(doc(db, 'dominoGames', gameId));
+        onLeaveGame();
+      },
+    });
   };
 
   if (!gameData) {
     return (
-      <div className="text-center p-8">
-        <div className="font-bold text-gray-500 dark:text-gray-400">Loading Game Data...</div>
+      <div className="flex justify-center p-10">
+        <div className="w-6 h-6 rounded-full border-2 border-violet-400 border-t-transparent" style={{ animation: 'spin 0.7s linear infinite' }} />
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Claim Host banner */}
       {!isHost && (
         <button
-          onClick={() => {
-            if (confirm('Claim host on this device? You will be able to submit rounds and manage the game.')) {
+          onClick={() => setConfirmDialog({
+            title: 'Claim Host',
+            message: 'Take host control on this device? You will be able to submit rounds and manage the game.',
+            confirmLabel: 'Claim Host',
+            variant: 'brand',
+            onConfirm: () => {
+              setConfirmDialog(null);
               updateDoc(doc(db, 'dominoGames', gameId), { hostDeviceId: getDeviceId() });
-            }
-          }}
-          className="w-full flex items-center justify-between bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 font-semibold px-4 py-3 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 active:bg-indigo-200 transition text-sm"
+            },
+          })}
+          className="w-full flex items-center justify-between bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800/60 text-violet-700 dark:text-violet-400 font-semibold px-4 py-3 rounded-2xl hover:bg-violet-100 dark:hover:bg-violet-900/30 active:bg-violet-200 transition text-sm"
         >
           <span className="flex items-center gap-2">
             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -120,71 +133,74 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
             </svg>
             Claim Host
           </span>
-          <span className="text-xs font-normal text-indigo-500 dark:text-indigo-400">Tap to manage &amp; submit rounds</span>
+          <span className="text-xs font-normal text-violet-400 dark:text-violet-500">Tap to manage &amp; submit rounds</span>
         </button>
       )}
 
       {/* Winner banner */}
       {isFinished && (
-        <div className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-900/30 dark:to-amber-900/30 border border-yellow-200 dark:border-yellow-800 p-4 sm:p-5 rounded-xl text-center">
-          <TrophyIcon className="w-8 h-8 text-yellow-500 mx-auto mb-1" />
-          <h2 className="text-lg font-extrabold text-yellow-800 dark:text-yellow-400">
-            {gameData.winner} wins!
-          </h2>
-          <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-1 flex items-center justify-center gap-1">
-            <LockIcon className="w-3 h-3" />
-            Game finished
+        <div className="relative overflow-hidden bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/40 dark:to-yellow-950/30 border border-amber-200 dark:border-amber-800/60 p-5 rounded-2xl text-center">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-400/10 rounded-full blur-2xl" />
+          </div>
+          <TrophyIcon className="w-8 h-8 text-amber-500 mx-auto mb-2" />
+          <h2 className="text-base font-extrabold text-amber-800 dark:text-amber-300 tracking-tight">{gameData.winner} wins!</h2>
+          <p className="text-xs text-amber-600 dark:text-amber-500 mt-1 flex items-center justify-center gap-1">
+            <LockIcon className="w-3 h-3" /> Game finished
           </p>
         </div>
       )}
 
       {/* Game header */}
-      <div className="bg-white dark:bg-gray-900 p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm text-gray-500 dark:text-gray-400">Game</span>
-          <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 tracking-wider">{gameId}</span>
-          {isFinished && <LockIcon className="text-yellow-500" />}
+      <div className="bg-white dark:bg-slate-900 px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="grad-brand w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm shadow-violet-500/20">
+            <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <rect x="2" y="2" width="9" height="20" rx="2" />
+              <rect x="13" y="2" width="9" height="20" rx="2" />
+            </svg>
+          </div>
+          <span className="font-mono font-bold text-violet-600 dark:text-violet-400 tracking-[0.2em] text-sm">{gameId}</span>
+          {isFinished && <LockIcon className="text-amber-500 w-3.5 h-3.5 shrink-0" />}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           {isFinished ? (
             <button onClick={handleReopenGame}
-              className="text-sm text-indigo-600 dark:text-indigo-400 font-semibold py-1.5 px-3 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 active:bg-indigo-100 transition">
+              className="text-xs text-violet-600 dark:text-violet-400 font-semibold py-1.5 px-3 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/30 transition">
               Reopen
             </button>
           ) : rankedPlayers.length > 0 && gameData.rounds.length > 0 ? (
             <button onClick={handleEndGame}
-              className="text-sm text-yellow-700 dark:text-yellow-500 font-semibold py-1.5 px-3 rounded-lg hover:bg-yellow-50 dark:hover:bg-yellow-900/30 active:bg-yellow-100 transition flex items-center gap-1">
-              <TrophyIcon className="w-4 h-4" />
-              End Game
+              className="text-xs text-amber-700 dark:text-amber-500 font-semibold py-1.5 px-3 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 transition flex items-center gap-1">
+              <TrophyIcon className="w-3.5 h-3.5" /> End
             </button>
           ) : null}
-          <button onClick={handleDeleteGame}
-            className="text-sm text-red-400 font-semibold py-1.5 px-3 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 active:bg-red-100 transition"
-            title="Delete game">
+          <button onClick={handleDeleteGame} aria-label="Delete game"
+            className="text-slate-400 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </button>
           <button onClick={onLeaveGame}
-            className="text-sm text-gray-500 dark:text-gray-400 font-semibold py-1.5 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 transition">
+            className="text-xs text-slate-500 dark:text-slate-400 font-semibold py-1.5 px-3 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
             Leave
           </button>
         </div>
       </div>
 
-      {/* Add player - host only */}
+      {/* Add player — host only */}
       {!isFinished && isHost && (
-        <div className="bg-white dark:bg-gray-900 p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800">
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <form onSubmit={handleAddPlayer} className="flex gap-2">
             <input
               type="text"
               value={newPlayer}
               onChange={(e) => setNewPlayer(e.target.value)}
               placeholder="Add player..."
-              className="flex-1 min-w-0 p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+              className="flex-1 min-w-0 px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none text-sm bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 transition"
             />
             <button type="submit" disabled={!newPlayer.trim()}
-              className="bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition disabled:opacity-50 shrink-0">
+              className="grad-brand text-white text-sm font-semibold py-2.5 px-4 rounded-xl hover:opacity-90 transition disabled:opacity-50 shrink-0 shadow-sm shadow-violet-500/20">
               Add
             </button>
           </form>
@@ -193,12 +209,12 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
 
       {/* Scoreboard table */}
       {rankedPlayers.length > 0 && (
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
-          <div className="-mx-[1px] overflow-x-auto">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider">
-                  <th className="py-3 px-3 text-center font-semibold w-12">#</th>
+                <tr className="bg-slate-50 dark:bg-slate-800/70 text-slate-400 dark:text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
+                  <th className="py-3 px-3 text-center font-semibold w-10">#</th>
                   <th className="py-3 px-3 text-left font-semibold">Player</th>
                   {gameData.rounds.map((r, ri) => (
                     <th key={r.roundNumber} className="py-3 px-2 text-center font-semibold whitespace-nowrap">
@@ -208,18 +224,20 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
                   <th className="py-3 px-3 text-center font-semibold">Total</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+              <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
                 {rankedPlayers.map((player) => (
-                  <tr key={player.id} className={`hover:bg-gray-50/50 dark:hover:bg-gray-800/50 ${
-                    isFinished && player.rank === 1 ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''
+                  <tr key={player.id} className={`transition-colors ${
+                    isFinished && player.rank === 1
+                      ? 'bg-amber-50/60 dark:bg-amber-950/20'
+                      : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/40'
                   }`}>
                     <td className="py-3 px-3 text-center">
                       {player.rank === 1 ? (
                         <span className="inline-flex justify-center">
-                          {isFinished ? <TrophyIcon className="text-yellow-500" /> : <GoldMedalIcon />}
+                          {isFinished ? <TrophyIcon className="text-amber-500" /> : <GoldMedalIcon />}
                         </span>
                       ) : (
-                        <span className="text-gray-400 dark:text-gray-500 font-semibold">{player.rank}</span>
+                        <span className="text-slate-400 dark:text-slate-500 font-semibold text-xs">{player.rank}</span>
                       )}
                     </td>
                     <td className="py-3 px-3">
@@ -233,26 +251,26 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
                             if (e.key === 'Enter') saveEditName();
                             if (e.key === 'Escape') setEditingName(null);
                           }}
-                          className="w-full p-1.5 border border-indigo-400 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+                          className="w-full px-2 py-1 border border-violet-400 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
                         />
                       ) : (
                         <button
                           onClick={() => startEditName(player)}
                           disabled={isFinished}
                           className={`flex items-center gap-1.5 transition-colors group text-left ${
-                            isFinished ? 'cursor-default' : 'hover:text-indigo-600 dark:hover:text-indigo-400'
+                            isFinished ? 'cursor-default' : 'hover:text-violet-600 dark:hover:text-violet-400'
                           }`}
                         >
                           <PlayerIcon />
-                          <span className={`font-medium ${
+                          <span className={`font-medium text-sm ${
                             isFinished && player.rank === 1
-                              ? 'text-yellow-800 dark:text-yellow-400'
-                              : 'text-gray-800 dark:text-gray-100'
-                          } ${!isFinished ? 'group-hover:text-indigo-600 dark:group-hover:text-indigo-400' : ''}`}>
+                              ? 'text-amber-700 dark:text-amber-400'
+                              : 'text-slate-800 dark:text-slate-100'
+                          } ${!isFinished ? 'group-hover:text-violet-600 dark:group-hover:text-violet-400' : ''}`}>
                             {player.name}
                           </span>
                           {!isFinished && (
-                            <svg className="w-3 h-3 text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3 h-3 text-slate-400 dark:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                             </svg>
                           )}
@@ -272,16 +290,16 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
                               if (e.key === 'Enter') saveEditScore();
                               if (e.key === 'Escape') setEditingScore(null);
                             }}
-                            className="w-14 p-1 border border-indigo-400 rounded text-center text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+                            className="w-14 px-1 py-1 border border-violet-400 rounded-lg text-center text-sm focus:ring-2 focus:ring-violet-500 outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
                           />
                         ) : (
                           <button
                             onClick={() => startEditScore(ri, player.id, r.scores[player.id])}
                             disabled={isFinished}
-                            className={`px-2 py-0.5 rounded transition-colors min-w-[2rem] inline-block ${
+                            className={`px-2 py-0.5 rounded-lg transition-colors min-w-[2rem] inline-block text-xs tabular-nums ${
                               isFinished
-                                ? 'text-gray-600 dark:text-gray-400 cursor-default'
-                                : 'text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'
+                                ? 'text-slate-500 dark:text-slate-400 cursor-default'
+                                : 'text-slate-500 dark:text-slate-300 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20'
                             }`}
                           >
                             {r.scores[player.id] ?? 0}
@@ -289,10 +307,10 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
                         )}
                       </td>
                     ))}
-                    <td className={`py-3 px-3 text-center font-bold ${
+                    <td className={`py-3 px-3 text-center font-bold text-sm tabular-nums ${
                       isFinished && player.rank === 1
-                        ? 'text-yellow-700 dark:text-yellow-400'
-                        : 'text-indigo-700 dark:text-indigo-400'
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-violet-700 dark:text-violet-400'
                     }`}>
                       {player.totalScore}
                     </td>
@@ -304,7 +322,7 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
         </div>
       )}
 
-      {/* Score entry - only when game is active */}
+      {/* Score entry */}
       {!isFinished && gameData.players.length > 0 && (() => {
         const pending = gameData.pendingScores || {};
         const enteredCount = gameData.players.filter(p => pending[p.id] !== undefined).length;
@@ -312,26 +330,40 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
 
         if (isHost) {
           return (
-            <div className="bg-white dark:bg-gray-900 p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800">
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  {roundLabel(gameData.rounds.length)}
-                </h3>
-                <span className="text-xs text-gray-400 dark:text-gray-500">{enteredCount} of {gameData.players.length} entered</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Round</span>
+                  <span className="text-xs font-bold text-violet-600 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 px-2 py-0.5 rounded-full">
+                    {roundLabel(gameData.rounds.length)}
+                  </span>
+                </div>
+                <span className="text-xs text-slate-400 dark:text-slate-500 tabular-nums">
+                  {enteredCount}/{gameData.players.length} entered
+                </span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                 {gameData.players.map((player) => {
                   const val = pending[player.id];
                   const hasScore = val !== undefined && val !== null;
                   return (
                     <button key={player.id} onClick={() => setScoreModal({ player })}
-                      className={`w-full p-3 rounded-xl border-2 text-left transition ${
+                      className={`w-full p-3 rounded-xl border-2 text-left transition active:scale-[0.97] ${
                         hasScore
-                          ? 'border-green-400 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
-                          : 'border-gray-200 dark:border-gray-700 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'
+                          ? 'border-emerald-400 dark:border-emerald-700/70 bg-emerald-50 dark:bg-emerald-950/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-violet-400 dark:hover:border-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/15'
                       }`}>
-                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">{player.name}</p>
-                      <p className={`text-2xl font-extrabold mt-0.5 ${hasScore ? 'text-green-700 dark:text-green-400' : 'text-gray-300 dark:text-gray-600'}`}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        {hasScore ? (
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 pulse-dot shrink-0" />
+                        ) : (
+                          <div className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 shrink-0" />
+                        )}
+                        <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">{player.name}</p>
+                      </div>
+                      <p className={`text-2xl font-extrabold tabular-nums ${
+                        hasScore ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-300 dark:text-slate-700'
+                      }`}>
                         {hasScore ? val : '—'}
                       </p>
                     </button>
@@ -339,7 +371,11 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
                 })}
               </div>
               <button onClick={onSubmitScores} disabled={!allEntered}
-                className="w-full mt-4 bg-green-600 text-white font-semibold py-2.5 rounded-lg hover:bg-green-700 active:bg-green-800 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                className={`w-full mt-3 font-semibold py-3 rounded-xl transition text-sm ${
+                  allEntered
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-500 active:bg-emerald-700 shadow-md shadow-emerald-500/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                }`}>
                 {allEntered ? 'Submit Round' : `Waiting for ${gameData.players.length - enteredCount} more...`}
               </button>
             </div>
@@ -351,52 +387,62 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
         return (
           <div className="space-y-3">
             {myPlayer ? (
-              <div className="bg-white dark:bg-gray-900 p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800">
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-                  {roundLabel(gameData.rounds.length)} — Your Score
-                </h3>
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Round</span>
+                  <span className="text-xs font-bold text-violet-600 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 px-2 py-0.5 rounded-full">
+                    {roundLabel(gameData.rounds.length)}
+                  </span>
+                  <span className="text-xs text-slate-400 dark:text-slate-500">— Your Score</span>
+                </div>
                 {hasMyScore ? (
-                  <div className="flex items-center gap-3 p-4 rounded-xl border-2 border-green-400 dark:border-green-700 bg-green-50 dark:bg-green-900/20">
+                  <div className="flex items-center gap-3 p-4 rounded-xl border-2 border-emerald-400 dark:border-emerald-700/70 bg-emerald-50 dark:bg-emerald-950/30">
                     <div className="flex-1">
-                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{myPlayer.name}</p>
-                      <p className="text-4xl font-extrabold text-green-700 dark:text-green-400">{myEntry}</p>
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{myPlayer.name}</p>
+                      <p className="text-4xl font-extrabold tabular-nums text-emerald-600 dark:text-emerald-400">{myEntry}</p>
                     </div>
                     <button onClick={() => setScoreModal({ player: myPlayer })}
-                      className="text-xs text-green-600 dark:text-green-400 font-semibold hover:text-green-800 dark:hover:text-green-300 transition px-3 py-1.5 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/40">
+                      className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold hover:text-emerald-900 dark:hover:text-emerald-300 transition px-3 py-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/40">
                       Edit
                     </button>
                   </div>
                 ) : (
                   <button onClick={() => setScoreModal({ player: myPlayer })}
-                    className="w-full p-4 rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition text-center">
-                    <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">Tap to enter your score</p>
-                    <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">Scan dominoes or enter manually</p>
+                    className="w-full p-5 rounded-xl border-2 border-dashed border-violet-300 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/20 hover:bg-violet-100 dark:hover:bg-violet-900/25 transition text-center active:scale-[0.99]">
+                    <p className="text-sm font-semibold text-violet-600 dark:text-violet-400">Tap to enter your score</p>
+                    <p className="text-xs text-violet-400 dark:text-violet-600 mt-0.5">Scan dominoes or enter manually</p>
                   </button>
                 )}
               </div>
             ) : null}
 
-            {/* Status dots */}
-            <div className="bg-white dark:bg-gray-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800">
-              <p className="text-xs text-gray-400 dark:text-gray-500 font-semibold uppercase tracking-wider mb-3">Table Status</p>
-              <div className="flex flex-wrap gap-3">
+            {/* Status */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mb-3">Table Status</p>
+              <div className="flex flex-wrap gap-2.5">
                 {gameData.players.map((player) => {
                   const entered = pending[player.id] !== undefined;
                   return (
-                    <div key={player.id} className="flex items-center gap-1.5">
-                      <div className={`w-2.5 h-2.5 rounded-full ${entered ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'}`} />
-                      <span className="text-xs text-gray-600 dark:text-gray-400">{player.name}</span>
+                    <div key={player.id} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition ${
+                      entered
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400'
+                        : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500'
+                    }`}>
+                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${entered ? 'bg-emerald-500 pulse-dot' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                      {player.name}
                     </div>
                   );
                 })}
               </div>
               {allEntered ? (
-                <p className="text-xs text-green-600 dark:text-green-400 font-semibold mt-3 flex items-center gap-1">
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-3 flex items-center gap-1.5">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
                   All scores entered — waiting for host to submit
                 </p>
               ) : (
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">Waiting for {gameData.players.length - enteredCount} more player{gameData.players.length - enteredCount !== 1 ? 's' : ''}...</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-3">
+                  Waiting for {gameData.players.length - enteredCount} more player{gameData.players.length - enteredCount !== 1 ? 's' : ''}...
+                </p>
               )}
             </div>
           </div>
@@ -412,6 +458,18 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, is
             setScoreModal(null);
           }}
           onCancel={() => setScoreModal(null)}
+        />
+      )}
+
+      {confirmDialog && (
+        <ConfirmDialog
+          open
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmLabel={confirmDialog.confirmLabel}
+          variant={confirmDialog.variant}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
         />
       )}
     </div>

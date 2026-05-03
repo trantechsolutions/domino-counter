@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { db, auth, collection, getDocs, doc, deleteDoc, signInWithEmailAndPassword } from '../lib/firebase';
 import { LockIcon } from './Icons';
 import UpdateLog from './UpdateLog';
+import ConfirmDialog from './ConfirmDialog';
 
 function formatDate(ts) {
   if (!ts) return '';
@@ -24,6 +25,7 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const loadGames = () => {
     setLoadingGames(true);
@@ -57,11 +59,19 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
     else setAllGames([]);
   }, [isSuperAdmin]);
 
-  const handleDelete = async (e, gameId) => {
+  const handleDelete = (e, gameId) => {
     e.stopPropagation();
-    if (!confirm(`Delete game ${gameId}? This cannot be undone.`)) return;
-    await deleteDoc(doc(db, 'dominoGames', gameId));
-    setAllGames((prev) => prev.filter((g) => g.id !== gameId));
+    setConfirmDialog({
+      title: 'Delete Game',
+      message: `Delete game ${gameId}? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        await deleteDoc(doc(db, 'dominoGames', gameId));
+        setAllGames((prev) => prev.filter((g) => g.id !== gameId));
+      },
+    });
   };
 
   const handleAdminLogin = async (e) => {
@@ -85,23 +95,39 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Action cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-gray-900 p-5 sm:p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
-          <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-1">New Game</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Start a fresh scoreboard.</p>
-          <button
-            onClick={onCreateGame}
-            disabled={isLoading}
-            className="w-full bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition disabled:opacity-50"
-          >
-            Create Game
-          </button>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Create game */}
+        <div className="relative overflow-hidden bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="absolute inset-0 grad-surface pointer-events-none" />
+          <div className="relative">
+            <div className="w-8 h-8 grad-brand rounded-xl flex items-center justify-center mb-3 shadow-md shadow-violet-500/25">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-0.5">New Game</h2>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mb-4">Start a fresh scoreboard</p>
+            <button
+              onClick={onCreateGame}
+              disabled={isLoading}
+              className="w-full grad-brand text-white text-sm font-semibold py-2.5 px-4 rounded-xl shadow-md shadow-violet-500/20 hover:opacity-90 active:opacity-80 transition-opacity disabled:opacity-50"
+            >
+              {isLoading ? 'Creating...' : 'Create Game'}
+            </button>
+          </div>
         </div>
-        <div className="bg-white dark:bg-gray-900 p-5 sm:p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
-          <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-1">Join Game</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter a 6-character Game ID.</p>
+
+        {/* Join game */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center mb-3">
+            <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-0.5">Join Game</h2>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-4">Enter a 6-character Game ID</p>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -115,12 +141,13 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
               onChange={(e) => setJoinId(e.target.value)}
               placeholder="ABC123"
               maxLength="6"
-              className="flex-1 min-w-0 p-2.5 text-center font-mono tracking-widest uppercase border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+              aria-label="Game ID"
+              className="flex-1 min-w-0 px-3 py-2.5 text-center font-mono tracking-[0.25em] uppercase text-sm border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-300 dark:placeholder-slate-600 transition"
             />
             <button
               type="submit"
               disabled={isLoading || !joinId.trim()}
-              className="bg-gray-800 dark:bg-gray-700 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-gray-900 dark:hover:bg-gray-600 active:bg-black transition disabled:opacity-50 shrink-0"
+              className="bg-slate-800 dark:bg-slate-700 text-white text-sm font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-900 dark:hover:bg-slate-600 transition disabled:opacity-50 shrink-0"
             >
               Join
             </button>
@@ -128,37 +155,39 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
         </div>
       </div>
 
-      {/* Super admin: all games list */}
+      {/* Super admin: all games */}
       {isSuperAdmin && (
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h3 className="font-bold text-gray-800 dark:text-gray-100">All Games</h3>
-              <span className="text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400 font-semibold px-2 py-0.5 rounded-full">Admin</span>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">All Games</h3>
+              <span className="text-[10px] bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">Admin</span>
             </div>
-            <button onClick={loadGames} className="text-xs text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition font-medium">
+            <button onClick={loadGames} className="text-xs text-slate-400 dark:text-slate-500 hover:text-violet-600 dark:hover:text-violet-400 transition font-medium">
               Refresh
             </button>
           </div>
           {loadingGames ? (
-            <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-sm">Loading games...</div>
+            <div className="p-8 flex justify-center">
+              <div className="w-5 h-5 rounded-full border-2 border-violet-400 border-t-transparent" style={{ animation: 'spin 0.7s linear infinite' }} />
+            </div>
           ) : allGames.length === 0 ? (
-            <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-sm">No games yet. Create one to get started!</div>
+            <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-sm">No games yet. Create one to get started!</div>
           ) : (
-            <div className="divide-y divide-gray-50 dark:divide-gray-800">
+            <div className="divide-y divide-slate-50 dark:divide-slate-800/70">
               {allGames.map((game) => (
                 <div
                   key={game.id}
                   onClick={() => onJoinGame(game.id)}
-                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 active:bg-indigo-100 dark:active:bg-indigo-900/30 transition text-left cursor-pointer"
+                  className="flex items-center gap-3 px-5 py-3 hover:bg-violet-50 dark:hover:bg-violet-900/10 active:bg-violet-100 dark:active:bg-violet-900/20 transition cursor-pointer"
                 >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
                     game.finished
-                      ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400'
-                      : 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400'
+                      ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                      : 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400'
                   }`}>
                     {game.finished ? (
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M5 5a3 3 0 015-2.236A3 3 0 0114.83 6H16a2 2 0 110 4h-1.17a3 3 0 01-1.83 1.83V14h1a2 2 0 110 4H6a2 2 0 110-4h1v-2.17A3 3 0 015.17 10H4a2 2 0 110-4h1.17A3 3 0 015 5z" clipRule="evenodd" />
                       </svg>
                     ) : (
@@ -166,31 +195,31 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 tracking-wider text-sm">{game.id}</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-bold text-violet-600 dark:text-violet-400 tracking-wider text-sm">{game.id}</span>
                       {game.finished && (
-                        <span className="text-xs text-yellow-700 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/40 px-1.5 py-0.5 rounded font-semibold flex items-center gap-1">
-                          <LockIcon className="w-3 h-3" />
+                        <span className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-full font-semibold flex items-center gap-1 uppercase tracking-wide">
+                          <LockIcon className="w-2.5 h-2.5" />
                           Finished
                         </span>
                       )}
                       {game.players.length > 0 && !game.finished && (
-                        <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
-                          {game.players.length} player{game.players.length !== 1 ? 's' : ''}
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full">
+                          {game.players.length}p
                         </span>
                       )}
                     </div>
                     {game.players.length > 0 && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                        {game.winner ? `Winner: ${game.winner}` : game.players.map((p) => p.name).join(', ')}
+                      <p className="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                        {game.winner ? `🏆 ${game.winner}` : game.players.map((p) => p.name).join(', ')}
                       </p>
                     )}
                   </div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 shrink-0">{formatDate(game.createdAt)}</div>
+                  <div className="text-xs text-slate-400 dark:text-slate-500 shrink-0 tabular-nums">{formatDate(game.createdAt)}</div>
                   <button
                     onClick={(e) => handleDelete(e, game.id)}
-                    className="text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-                    title="Delete game"
+                    aria-label="Delete game"
+                    className="text-slate-400 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -204,7 +233,7 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
       )}
 
       {/* Update log */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <UpdateLog />
       </div>
 
@@ -212,19 +241,20 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
       <div className="text-center">
         {authUser && !authUser.isAnonymous ? (
           <div className="flex items-center justify-center gap-3">
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              Signed in as <span className="font-medium text-gray-600 dark:text-gray-300">{authUser.email}</span>
-              {isSuperAdmin && <span className="ml-1 text-indigo-500 dark:text-indigo-400 font-semibold">· Super Admin</span>}
+            <span className="text-xs text-slate-400 dark:text-slate-500">
+              <span className="font-medium text-slate-600 dark:text-slate-300">{authUser.email}</span>
+              {isSuperAdmin && <span className="ml-1.5 text-violet-500 dark:text-violet-400 font-semibold">· Super Admin</span>}
             </span>
             <button onClick={onSignOut} className="text-xs text-red-400 hover:text-red-600 dark:hover:text-red-300 transition font-medium">
               Sign out
             </button>
           </div>
         ) : showAdminLogin ? (
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm text-left max-w-sm mx-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm text-left max-w-sm mx-auto scale-in">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-800 dark:text-gray-100 text-sm">Admin Sign In</h3>
-              <button onClick={() => { setShowAdminLogin(false); setLoginError(''); }} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition">
+              <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm">Admin Sign In</h3>
+              <button onClick={() => { setShowAdminLogin(false); setLoginError(''); }} aria-label="Close"
+                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -238,7 +268,7 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
                 placeholder="Email"
                 required
                 autoComplete="email"
-                className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+                className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 transition"
               />
               <input
                 type="password"
@@ -247,13 +277,13 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
                 placeholder="Password"
                 required
                 autoComplete="current-password"
-                className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+                className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 transition"
               />
               {loginError && <p className="text-xs text-red-600 dark:text-red-400">{loginError}</p>}
               <button
                 type="submit"
                 disabled={loginLoading}
-                className="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 text-sm"
+                className="w-full grad-brand text-white font-semibold py-2.5 rounded-xl hover:opacity-90 transition disabled:opacity-50 text-sm"
               >
                 {loginLoading ? 'Signing in...' : 'Sign In'}
               </button>
@@ -262,12 +292,24 @@ export default function Lobby({ onCreateGame, onJoinGame, isLoading, authUser, i
         ) : (
           <button
             onClick={() => setShowAdminLogin(true)}
-            className="text-xs text-gray-300 dark:text-gray-700 hover:text-gray-500 dark:hover:text-gray-500 transition"
+            className="text-xs text-slate-400 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-400 transition"
           >
             Admin
           </button>
         )}
       </div>
+
+      {confirmDialog && (
+        <ConfirmDialog
+          open
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmLabel={confirmDialog.confirmLabel}
+          variant={confirmDialog.variant}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+        />
+      )}
     </div>
   );
 }
