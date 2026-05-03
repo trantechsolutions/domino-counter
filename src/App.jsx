@@ -215,22 +215,22 @@ export default function App() {
 
   if (isLoading && !gameId) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950">
         <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen font-sans">
+    <div className="bg-gray-50 dark:bg-gray-950 min-h-screen font-sans">
       <div className="mx-auto px-4 py-4 sm:py-6 max-w-2xl">
         <header className="text-center mb-5 sm:mb-6">
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-800">Domino Suite</h1>
-          <p className="text-gray-400 text-sm mt-0.5">Score Tracking & Pip Counting</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-800 dark:text-gray-100">Domino Suite</h1>
+          <p className="text-gray-400 dark:text-gray-500 text-sm mt-0.5">Score Tracking & Pip Counting</p>
         </header>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 mb-4 rounded-xl text-sm" role="alert">
+          <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 mb-4 rounded-xl text-sm" role="alert">
             {error}
           </div>
         )}
@@ -264,7 +264,7 @@ export default function App() {
           />
         )}
 
-        <footer className="text-center mt-8 pb-4 text-gray-300 text-xs">
+        <footer className="text-center mt-8 pb-4 text-gray-300 dark:text-gray-700 text-xs">
           Built with React & Firebase
         </footer>
       </div>

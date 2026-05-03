@@ -28,7 +28,7 @@ export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCa
     }
   }, []);
 
-  // Draw overlay
+  // Draw live detection overlay on canvas
   useEffect(() => {
     const overlay = overlayRef.current;
     const video = videoRef.current;
@@ -115,48 +115,48 @@ export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCa
     const anotherPlayerIsWinner = pendingWinner && pendingWinner !== player.id;
     const thisPlayerIsWinner = pendingWinner === player.id;
     return (
-    <div className="p-6 space-y-3">
-      <p className="text-sm text-gray-500 text-center mb-4">
-        How would you like to enter <span className="font-bold text-gray-800">{player.name}'s</span> score?
-      </p>
-      <button onClick={() => !anotherPlayerIsWinner && confirm(0, true)}
-        disabled={anotherPlayerIsWinner}
-        className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 transition text-left ${
-          thisPlayerIsWinner
-            ? 'border-yellow-400 bg-yellow-100'
-            : anotherPlayerIsWinner
-            ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
-            : 'border-yellow-200 bg-yellow-50 hover:border-yellow-400 hover:bg-yellow-100'
-        }`}>
-        <span className="text-2xl">🏆</span>
-        <div>
-          <p className="font-semibold text-yellow-800">Round Winner — 0 pts</p>
-          <p className="text-xs text-yellow-600">
-            {anotherPlayerIsWinner ? 'Another player already won this round' : `${player.name} went out first`}
-          </p>
-        </div>
-      </button>
-      <button onClick={startCamera} disabled={!modelReady}
-        className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-indigo-100 hover:border-indigo-400 hover:bg-indigo-50 transition disabled:opacity-50 text-left">
-        <span className="text-2xl">📷</span>
-        <div>
-          <p className="font-semibold text-gray-800">Scan Dominoes</p>
-          <p className="text-xs text-gray-400">{modelReady ? 'AI pip detection' : 'Loading model...'}</p>
-        </div>
-      </button>
-      <button onClick={() => setMode('manual')}
-        className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-gray-100 hover:border-gray-300 hover:bg-gray-50 transition text-left">
-        <span className="text-2xl">✏️</span>
-        <div>
-          <p className="font-semibold text-gray-800">Enter Manually</p>
-          <p className="text-xs text-gray-400">Type the pip count</p>
-        </div>
-      </button>
-    </div>
-  );
+      <div className="p-6 space-y-3">
+        <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
+          How would you like to enter <span className="font-bold text-gray-800 dark:text-gray-100">{player.name}'s</span> score?
+        </p>
+        <button onClick={() => !anotherPlayerIsWinner && confirm(0, true)}
+          disabled={anotherPlayerIsWinner}
+          className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 transition text-left ${
+            thisPlayerIsWinner
+              ? 'border-yellow-400 dark:border-yellow-600 bg-yellow-100 dark:bg-yellow-900/40'
+              : anotherPlayerIsWinner
+              ? 'border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 opacity-40 cursor-not-allowed'
+              : 'border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 hover:border-yellow-400 dark:hover:border-yellow-600 hover:bg-yellow-100 dark:hover:bg-yellow-900/40'
+          }`}>
+          <span className="text-2xl">🏆</span>
+          <div>
+            <p className="font-semibold text-yellow-800 dark:text-yellow-400">Round Winner — 0 pts</p>
+            <p className="text-xs text-yellow-600 dark:text-yellow-500">
+              {anotherPlayerIsWinner ? 'Another player already won this round' : `${player.name} went out first`}
+            </p>
+          </div>
+        </button>
+        <button onClick={startCamera} disabled={!modelReady}
+          className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-indigo-100 dark:border-indigo-900 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition disabled:opacity-50 text-left">
+          <span className="text-2xl">📷</span>
+          <div>
+            <p className="font-semibold text-gray-800 dark:text-gray-100">Scan Dominoes</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">{modelReady ? 'AI pip detection' : 'Loading model...'}</p>
+          </div>
+        </button>
+        <button onClick={() => setMode('manual')}
+          className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-gray-100 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition text-left">
+          <span className="text-2xl">✏️</span>
+          <div>
+            <p className="font-semibold text-gray-800 dark:text-gray-100">Enter Manually</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">Type the pip count</p>
+          </div>
+        </button>
+      </div>
+    );
   };
 
-  // ── Camera mode (fullscreen) ─────────────────────────────────────────────────
+  // ── Camera mode (fullscreen) — always black, no dark: needed ─────────────────
   if (mode === 'camera') {
     return (
       <div className="fixed inset-0 z-50 bg-black flex flex-col">
@@ -185,10 +185,9 @@ export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCa
     );
   }
 
-  // ── Review mode (fullscreen) ─────────────────────────────────────────────────
+  // ── Review mode (fullscreen) — always black, no dark: needed ─────────────────
   const ReviewScreen = () => (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      {/* Full-screen captured image with SVG bounding boxes */}
       <div className="relative flex-1 min-h-0">
         <img src={capturedImage} alt="capture" className="w-full h-full object-contain" />
         <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${capturedDims.w} ${capturedDims.h}`} preserveAspectRatio="xMidYMid meet">
@@ -202,21 +201,16 @@ export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCa
             </g>
           ))}
         </svg>
-
-        {/* Top HUD: pip count + player label */}
         <div className="absolute top-3 left-3 bg-black/70 text-white px-3 py-1.5 rounded-lg flex items-center gap-2">
           <span className="text-xl font-extrabold text-indigo-400">{reviewPips}</span>
           <span className="text-xs text-gray-300">pips — {player.name}</span>
         </div>
-
-        {/* Retake button top-right */}
         <button onClick={() => { setCapturedImage(null); setDetections([]); startCamera(); }}
           className="absolute top-3 right-3 bg-black/70 text-white text-sm font-semibold py-1.5 px-4 rounded-lg hover:bg-gray-700 transition">
           Retake
         </button>
       </div>
 
-      {/* Bottom panel: detection list + apply button */}
       <div className="bg-gray-950 text-white flex flex-col max-h-[45vh]">
         <div className="overflow-y-auto flex-1 divide-y divide-gray-800">
           {detections.map(d => (
@@ -238,7 +232,6 @@ export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCa
             + Add manually
           </button>
         </div>
-
         <div className="p-4 border-t border-gray-800">
           <button onClick={() => confirm(reviewPips)}
             className="w-full bg-green-600 text-white font-bold py-4 rounded-xl text-lg hover:bg-green-500 active:bg-green-700 transition">
@@ -252,38 +245,39 @@ export default function ScoreEntryModal({ player, pendingWinner, onConfirm, onCa
   // ── Manual entry ─────────────────────────────────────────────────────────────
   const ManualScreen = () => (
     <div className="p-6 space-y-4">
-      <p className="text-sm text-gray-500 text-center">
-        Enter pip count for <span className="font-bold text-gray-800">{player.name}</span>
+      <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+        Enter pip count for <span className="font-bold text-gray-800 dark:text-gray-100">{player.name}</span>
       </p>
-      <input autoFocus type="number" min="0" value={manualValue} onChange={e => setManualValue(e.target.value)}
+      <input autoFocus type="number" min="0" value={manualValue}
+        onChange={e => setManualValue(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && manualValue !== '') confirm(+manualValue); }}
         placeholder="0"
-        className="w-full text-center text-4xl font-bold p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" />
+        className="w-full text-center text-4xl font-bold p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100" />
       <button onClick={() => confirm(+manualValue)} disabled={manualValue === ''}
         className="w-full bg-green-600 text-white font-semibold py-3 rounded-xl hover:bg-green-700 active:bg-green-800 transition disabled:opacity-50">
         Apply {manualValue || 0} to {player.name}
       </button>
-      <button onClick={() => setMode('choose')} className="w-full text-sm text-gray-400 hover:text-gray-600 transition py-1">
+      <button onClick={() => setMode('choose')} className="w-full text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition py-1">
         ← Back
       </button>
     </div>
   );
 
-  // ── Review mode short-circuit (fullscreen, like camera) ──────────────────────
+  // ── Review short-circuit (fullscreen) ────────────────────────────────────────
   if (mode === 'review') return <ReviewScreen />;
 
   // ── Modal wrapper ─────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onCancel}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-800">{player.name}'s Score</h2>
-          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 transition p-1">
+      <div className="relative w-full sm:max-w-md bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+          <h2 className="font-bold text-gray-800 dark:text-gray-100">{player.name}'s Score</h2>
+          <button onClick={onCancel} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition p-1">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
-        {error && <div className="mx-4 mt-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{error}</div>}
+        {error && <div className="mx-4 mt-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg text-sm">{error}</div>}
         {mode === 'choose' && <ChooseScreen />}
         {mode === 'manual' && <ManualScreen />}
       </div>
