@@ -108,6 +108,11 @@ export default function App() {
     setScores((prev) => ({ ...prev, [playerId]: value }));
   };
 
+  const handleApplyPipScore = (playerId, value) => {
+    setScores((prev) => ({ ...prev, [playerId]: value }));
+    setActiveTab('tracker');
+  };
+
   const handleSubmitScores = async () => {
     const finalScores = {};
     for (const player of gameData.players) {
@@ -180,7 +185,7 @@ export default function App() {
               />
             )}
             {activeTab === 'pip_counter' && (
-              <PipTracker gameData={gameData} onApplyScore={handleScoreChange} />
+              <PipTracker gameData={gameData} onApplyScore={handleApplyPipScore} />
             )}
           </div>
         )}

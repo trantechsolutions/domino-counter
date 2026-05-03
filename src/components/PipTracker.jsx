@@ -197,6 +197,7 @@ export default function PipTracker({ gameData, onApplyScore }) {
   const [detections, setDetections] = useState([]);
 
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
+  const [appliedToast, setAppliedToast] = useState('');
 
   // Load model on mount
   useEffect(() => {
@@ -369,10 +370,11 @@ export default function PipTracker({ gameData, onApplyScore }) {
   };
 
   const handleApply = () => {
-    if (!selectedPlayerId) { alert('Please select a player first.'); return; }
-    onApplyScore(selectedPlayerId, totalPips.toString());
+    if (!selectedPlayerId) return;
     const playerName = gameData?.players?.find((p) => p.id === selectedPlayerId)?.name || 'player';
-    alert(`Score of ${totalPips} applied to ${playerName}. Check the Score Tracker tab.`);
+    onApplyScore(selectedPlayerId, totalPips.toString());
+    setAppliedToast(`${totalPips} pips → ${playerName}`);
+    setTimeout(() => setAppliedToast(''), 2000);
   };
 
   const retake = () => {
@@ -479,11 +481,28 @@ export default function PipTracker({ gameData, onApplyScore }) {
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
-              <button onClick={handleApply} disabled={detections.length === 0}
-                className="bg-green-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-green-700 active:bg-green-800 transition shrink-0 disabled:opacity-50">
-                Apply {totalPips}
+              <button onClick={handleApply} disabled={!selectedPlayerId || detections.length === 0}
+                className="bg-green-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-green-700 active:bg-green-800 transition shrink-0 disabled:opacity-50 relative overflow-hidden">
+                {appliedToast ? (
+                  <span className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Added!
+                  </span>
+                ) : (
+                  `Apply ${totalPips}`
+                )}
               </button>
             </div>
+            {appliedToast && (
+              <p className="text-green-600 text-xs font-medium mt-2 flex items-center gap-1">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                </svg>
+                {appliedToast} — switching to Score Tracker
+              </p>
+            )}
           </div>
         )}
       </div>
