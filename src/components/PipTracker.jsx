@@ -175,7 +175,7 @@ async function detectDominoes(source, imgWidth, imgHeight) {
   return mergeDetections(allResults);
 }
 
-export default function PipTracker({ gameData, onApplyScore }) {
+export default function PipTracker({ gameData, myPlayer, isHost, onApplyScore }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const overlayRef = useRef(null);
@@ -212,10 +212,13 @@ export default function PipTracker({ gameData, onApplyScore }) {
   }, []);
 
   useEffect(() => {
-    if (gameData?.players?.length > 0 && !selectedPlayerId) {
+    // Non-host: always lock to their own player
+    if (myPlayer && !isHost) {
+      setSelectedPlayerId(myPlayer.id);
+    } else if (gameData?.players?.length > 0 && !selectedPlayerId) {
       setSelectedPlayerId(gameData.players[0].id);
     }
-  }, [gameData?.players, selectedPlayerId]);
+  }, [gameData?.players, myPlayer, isHost, selectedPlayerId]);
 
   const totalPips = detections.reduce((sum, d) => sum + d.pipValue, 0);
   const liveTotalPips = liveDetections.reduce((sum, d) => sum + d.pipValue, 0);
@@ -474,13 +477,20 @@ export default function PipTracker({ gameData, onApplyScore }) {
           <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
             <label className="text-sm font-medium text-gray-600 block mb-2">Apply score to player</label>
             <div className="flex gap-2">
-              <select value={selectedPlayerId}
-                onChange={(e) => setSelectedPlayerId(e.target.value)}
-                className="flex-1 min-w-0 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm">
-                {gameData.players.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              {/* Non-host: show own name label only; host: show full dropdown */}
+              {!isHost && myPlayer ? (
+                <div className="flex-1 min-w-0 p-2.5 border border-gray-200 rounded-lg bg-gray-50 text-sm font-medium text-gray-700 truncate">
+                  {myPlayer.name}
+                </div>
+              ) : (
+                <select value={selectedPlayerId}
+                  onChange={(e) => setSelectedPlayerId(e.target.value)}
+                  className="flex-1 min-w-0 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm">
+                  {gameData.players.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
               <button onClick={handleApply} disabled={!selectedPlayerId || detections.length === 0}
                 className="bg-green-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-green-700 active:bg-green-800 transition shrink-0 disabled:opacity-50 relative overflow-hidden">
                 {appliedToast ? (

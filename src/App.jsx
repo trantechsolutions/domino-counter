@@ -10,9 +10,11 @@ import {
   updateDoc,
   arrayUnion,
 } from './lib/firebase';
+import { getDeviceId, getPlayerClaim, setPlayerClaim, clearPlayerClaim } from './lib/deviceId';
 import Lobby from './components/Lobby';
 import Scoreboard from './components/Scoreboard';
 import PipTracker from './components/PipTracker';
+import PlayerClaimScreen from './components/PlayerClaimScreen';
 import TabNav from './components/TabNav';
 
 const generateGameId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -23,7 +25,11 @@ export default function App() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('tracker');
-  const [scores, setScores] = useState({});
+  const [myPlayer, setMyPlayer] = useState(null);
+  const [showPlayerClaim, setShowPlayerClaim] = useState(false);
+
+  // Derived: is the current device the host?
+  const isHost = !gameData?.hostDeviceId || gameData.hostDeviceId === getDeviceId();
 
   const handleJoinGame = (id, isAutoJoin = false) => {
     setIsLoading(true);
@@ -35,6 +41,13 @@ export default function App() {
           setGameId(upperId);
           setActiveTab('tracker');
           setError('');
+          // Restore existing claim or prompt
+          const claim = getPlayerClaim(upperId);
+          if (claim) {
+            setMyPlayer(claim);
+          } else {
+            setShowPlayerClaim(true);
+          }
         } else {
           if (!isAutoJoin) setError('Game not found.');
           localStorage.removeItem('dominoLastGameId');
@@ -67,21 +80,24 @@ export default function App() {
       } else {
         setError(`Game with ID ${gameId} not found.`);
         setGameId(null);
+        setMyPlayer(null);
+        setShowPlayerClaim(false);
         localStorage.removeItem('dominoLastGameId');
       }
     });
     return () => unsub();
   }, [gameId]);
 
+  // Sync myPlayer name if host renames the player in Firestore
   useEffect(() => {
-    if (gameData?.players) {
-      const initialScores = {};
-      gameData.players.forEach((p) => {
-        initialScores[p.id] = scores[p.id] || '';
-      });
-      setScores(initialScores);
+    if (!myPlayer || !gameData?.players) return;
+    const updated = gameData.players.find((p) => p.id === myPlayer.id);
+    if (updated && updated.name !== myPlayer.name) {
+      const newClaim = { ...myPlayer, name: updated.name };
+      setMyPlayer(newClaim);
+      setPlayerClaim(gameId, newClaim);
     }
-  }, [gameData?.players ? JSON.stringify(gameData.players) : '']);
+  }, [gameData?.players]);
 
   const handleCreateGame = async () => {
     setIsLoading(true);
@@ -90,44 +106,68 @@ export default function App() {
       createdAt: new Date(),
       players: [],
       rounds: [],
+      hostDeviceId: getDeviceId(),
+      pendingScores: {},
+      deviceClaims: {},
     });
     localStorage.setItem('dominoLastGameId', newGameId);
     setGameId(newGameId);
     setActiveTab('tracker');
+    setShowPlayerClaim(true); // Host also needs to claim a player slot
     setIsLoading(false);
   };
 
   const handleLeaveGame = () => {
+    if (gameId) clearPlayerClaim(gameId);
     localStorage.removeItem('dominoLastGameId');
     setGameId(null);
     setGameData(null);
+    setMyPlayer(null);
+    setShowPlayerClaim(false);
     setError('');
   };
 
-  const handleScoreChange = (playerId, value) => {
-    setScores((prev) => ({ ...prev, [playerId]: value }));
+  const handleClaim = async (player) => {
+    setPlayerClaim(gameId, player);
+    setMyPlayer(player);
+    setShowPlayerClaim(false);
+    await updateDoc(doc(db, 'dominoGames', gameId), {
+      [`deviceClaims.${player.id}`]: {
+        claimedAt: new Date(),
+        deviceHint: getDeviceId().slice(0, 6),
+      },
+    });
   };
 
-  const handleApplyPipScore = (playerId, value) => {
-    setScores((prev) => ({ ...prev, [playerId]: value }));
+  // Write a single player's pending score directly to Firestore
+  const handlePendingScoreWrite = async (playerId, value) => {
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed)) return;
+    await updateDoc(doc(db, 'dominoGames', gameId), {
+      [`pendingScores.${playerId}`]: parsed,
+    });
+  };
+
+  const handleApplyPipScore = async (playerId, value) => {
+    await handlePendingScoreWrite(playerId, value);
     setActiveTab('tracker');
   };
 
   const handleSubmitScores = async () => {
+    const pending = gameData.pendingScores || {};
     const finalScores = {};
     for (const player of gameData.players) {
-      const scoreString = scores[player.id];
-      if (scoreString === '' || scoreString === null || isNaN(parseInt(scoreString, 10))) {
-        alert('Please enter a valid score for every player. A score of 0 is valid.');
+      const val = pending[player.id];
+      if (val === undefined || val === null || isNaN(val)) {
+        alert(`Missing score for ${player.name}. All players must enter a score first.`);
         return;
       }
-      finalScores[player.id] = parseInt(scoreString, 10);
+      finalScores[player.id] = val;
     }
     const newRound = { roundNumber: gameData.rounds.length + 1, scores: finalScores };
     const allRounds = [...gameData.rounds, newRound];
-    const updates = { rounds: arrayUnion(newRound) };
+    const updates = { rounds: arrayUnion(newRound), pendingScores: {} };
 
-    // Auto-finish after 13 rounds
     if (allRounds.length >= 13 && !gameData.finished) {
       const totals = gameData.players.map((p) => ({
         name: p.name,
@@ -140,11 +180,6 @@ export default function App() {
     }
 
     await updateDoc(doc(db, 'dominoGames', gameId), updates);
-    const resetScores = {};
-    gameData.players.forEach((p) => {
-      resetScores[p.id] = '';
-    });
-    setScores(resetScores);
   };
 
   if (isLoading && !gameId) {
@@ -171,6 +206,14 @@ export default function App() {
 
         {!gameId ? (
           <Lobby onCreateGame={handleCreateGame} onJoinGame={handleJoinGame} isLoading={isLoading} />
+        ) : showPlayerClaim ? (
+          <PlayerClaimScreen
+            gameId={gameId}
+            gameData={gameData}
+            isHost={isHost}
+            onClaim={handleClaim}
+            onSkip={() => setShowPlayerClaim(false)}
+          />
         ) : (
           <div>
             <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
@@ -179,13 +222,19 @@ export default function App() {
                 gameId={gameId}
                 gameData={gameData}
                 onLeaveGame={handleLeaveGame}
-                scores={scores}
-                onScoreChange={handleScoreChange}
+                myPlayer={myPlayer}
+                isHost={isHost}
+                onPendingScoreWrite={handlePendingScoreWrite}
                 onSubmitScores={handleSubmitScores}
               />
             )}
             {activeTab === 'pip_counter' && (
-              <PipTracker gameData={gameData} onApplyScore={handleApplyPipScore} />
+              <PipTracker
+                gameData={gameData}
+                myPlayer={myPlayer}
+                isHost={isHost}
+                onApplyScore={handleApplyPipScore}
+              />
             )}
           </div>
         )}

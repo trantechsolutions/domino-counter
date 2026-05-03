@@ -6,7 +6,7 @@ import ScoreEntryModal from './ScoreEntryModal';
 // Mexican Train: 13 rounds, starting at double-12 down to double-0
 const roundLabel = (roundIndex) => `R${12 - roundIndex}`;
 
-export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onScoreChange, onSubmitScores }) {
+export default function Scoreboard({ gameId, gameData, onLeaveGame, myPlayer, isHost, onPendingScoreWrite, onSubmitScores }) {
   const [newPlayer, setNewPlayer] = useState('');
   const [editingName, setEditingName] = useState(null);
   const [editNameValue, setEditNameValue] = useState('');
@@ -176,8 +176,8 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
         </div>
       </div>
 
-      {/* Add player - only when game is active */}
-      {!isFinished && (
+      {/* Add player - host only */}
+      {!isFinished && isHost && (
         <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
           <form onSubmit={handleAddPlayer} className="flex gap-2">
             <input
@@ -308,44 +308,109 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
       )}
 
       {/* Score entry - only when game is active */}
-      {!isFinished && gameData.players.length > 0 && (
-        <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="font-bold text-sm text-gray-500 uppercase tracking-wider mb-3">
-            {roundLabel(gameData.rounds.length)} — Tap a player to enter score
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {gameData.players.map((player) => {
-              const val = scores[player.id];
-              const hasScore = val !== '' && val !== null && val !== undefined;
-              return (
-                <button key={player.id} onClick={() => setScoreModal({ player })}
-                  className={`w-full p-3 rounded-xl border-2 text-left transition ${
-                    hasScore
-                      ? 'border-green-400 bg-green-50'
-                      : 'border-gray-200 hover:border-indigo-400 hover:bg-indigo-50'
-                  }`}>
-                  <p className="text-xs font-medium text-gray-500 truncate">{player.name}</p>
-                  <p className={`text-2xl font-extrabold mt-0.5 ${hasScore ? 'text-green-700' : 'text-gray-300'}`}>
-                    {hasScore ? val : '—'}
-                  </p>
-                </button>
-              );
-            })}
+      {!isFinished && gameData.players.length > 0 && (() => {
+        const pending = gameData.pendingScores || {};
+        const enteredCount = gameData.players.filter(p => pending[p.id] !== undefined).length;
+        const allEntered = enteredCount === gameData.players.length;
+
+        // HOST VIEW: all player tiles + submit
+        if (isHost) {
+          return (
+            <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-sm text-gray-500 uppercase tracking-wider">
+                  {roundLabel(gameData.rounds.length)}
+                </h3>
+                <span className="text-xs text-gray-400">{enteredCount} of {gameData.players.length} entered</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {gameData.players.map((player) => {
+                  const val = pending[player.id];
+                  const hasScore = val !== undefined && val !== null;
+                  return (
+                    <button key={player.id} onClick={() => setScoreModal({ player })}
+                      className={`w-full p-3 rounded-xl border-2 text-left transition ${
+                        hasScore ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-indigo-400 hover:bg-indigo-50'
+                      }`}>
+                      <p className="text-xs font-medium text-gray-500 truncate">{player.name}</p>
+                      <p className={`text-2xl font-extrabold mt-0.5 ${hasScore ? 'text-green-700' : 'text-gray-300'}`}>
+                        {hasScore ? val : '—'}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={onSubmitScores} disabled={!allEntered}
+                className="w-full mt-4 bg-green-600 text-white font-semibold py-2.5 rounded-lg hover:bg-green-700 active:bg-green-800 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                {allEntered ? 'Submit Round' : `Waiting for ${gameData.players.length - enteredCount} more...`}
+              </button>
+            </div>
+          );
+        }
+
+        // PLAYER VIEW: only own entry card + status dots
+        const myEntry = myPlayer ? pending[myPlayer.id] : undefined;
+        const hasMyScore = myEntry !== undefined && myEntry !== null;
+        return (
+          <div className="space-y-3">
+            {myPlayer ? (
+              <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
+                <h3 className="font-bold text-sm text-gray-500 uppercase tracking-wider mb-3">
+                  {roundLabel(gameData.rounds.length)} — Your Score
+                </h3>
+                {hasMyScore ? (
+                  <div className="flex items-center gap-3 p-4 rounded-xl border-2 border-green-400 bg-green-50">
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-gray-500">{myPlayer.name}</p>
+                      <p className="text-4xl font-extrabold text-green-700">{myEntry}</p>
+                    </div>
+                    <button onClick={() => setScoreModal({ player: myPlayer })}
+                      className="text-xs text-green-600 font-semibold hover:text-green-800 transition px-3 py-1.5 rounded-lg hover:bg-green-100">
+                      Edit
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setScoreModal({ player: myPlayer })}
+                    className="w-full p-4 rounded-xl border-2 border-dashed border-indigo-300 bg-indigo-50 hover:bg-indigo-100 transition text-center">
+                    <p className="text-sm font-semibold text-indigo-600">Tap to enter your score</p>
+                    <p className="text-xs text-indigo-400 mt-0.5">Scan dominoes or enter manually</p>
+                  </button>
+                )}
+              </div>
+            ) : null}
+
+            {/* Status dots — all players */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-3">Table Status</p>
+              <div className="flex flex-wrap gap-3">
+                {gameData.players.map((player) => {
+                  const entered = pending[player.id] !== undefined;
+                  return (
+                    <div key={player.id} className="flex items-center gap-1.5">
+                      <div className={`w-2.5 h-2.5 rounded-full ${entered ? 'bg-green-500' : 'bg-gray-200'}`} />
+                      <span className="text-xs text-gray-600">{player.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {allEntered ? (
+                <p className="text-xs text-green-600 font-semibold mt-3 flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                  All scores entered — waiting for host to submit
+                </p>
+              ) : (
+                <p className="text-xs text-gray-400 mt-3">Waiting for {gameData.players.length - enteredCount} more player{gameData.players.length - enteredCount !== 1 ? 's' : ''}...</p>
+              )}
+            </div>
           </div>
-          <button
-            onClick={onSubmitScores}
-            className="w-full mt-4 bg-green-600 text-white font-semibold py-2.5 rounded-lg hover:bg-green-700 active:bg-green-800 transition"
-          >
-            Submit Round
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {scoreModal && (
         <ScoreEntryModal
           player={scoreModal.player}
           onConfirm={(value) => {
-            onScoreChange(scoreModal.player.id, value);
+            onPendingScoreWrite(scoreModal.player.id, value);
             setScoreModal(null);
           }}
           onCancel={() => setScoreModal(null)}
