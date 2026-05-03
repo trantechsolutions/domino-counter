@@ -1,6 +1,10 @@
 import { useState, useMemo } from 'react';
 import { db, doc, updateDoc, arrayUnion, deleteDoc } from '../lib/firebase';
 import { PlayerIcon, GoldMedalIcon, TrophyIcon, LockIcon } from './Icons';
+import ScoreEntryModal from './ScoreEntryModal';
+
+// Mexican Train: 13 rounds, starting at double-12 down to double-0
+const roundLabel = (roundIndex) => `R${12 - roundIndex}`;
 
 export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onScoreChange, onSubmitScores }) {
   const [newPlayer, setNewPlayer] = useState('');
@@ -8,6 +12,7 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
   const [editNameValue, setEditNameValue] = useState('');
   const [editingScore, setEditingScore] = useState(null);
   const [editScoreValue, setEditScoreValue] = useState('');
+  const [scoreModal, setScoreModal] = useState(null); // { player }
 
   const isFinished = gameData?.finished || false;
 
@@ -202,9 +207,9 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
                 <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
                   <th className="py-3 px-3 text-center font-semibold w-12">#</th>
                   <th className="py-3 px-3 text-left font-semibold">Player</th>
-                  {gameData.rounds.map((r) => (
+                  {gameData.rounds.map((r, ri) => (
                     <th key={r.roundNumber} className="py-3 px-2 text-center font-semibold whitespace-nowrap">
-                      R{r.roundNumber}
+                      {roundLabel(ri)}
                     </th>
                   ))}
                   <th className="py-3 px-3 text-center font-semibold">Total</th>
@@ -306,29 +311,45 @@ export default function Scoreboard({ gameId, gameData, onLeaveGame, scores, onSc
       {!isFinished && gameData.players.length > 0 && (
         <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-100">
           <h3 className="font-bold text-sm text-gray-500 uppercase tracking-wider mb-3">
-            Round {gameData.rounds.length + 1}
+            {roundLabel(gameData.rounds.length)} — Tap a player to enter score
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {gameData.players.map((player) => (
-              <div key={player.id}>
-                <label className="text-sm font-medium text-gray-600 block mb-1">{player.name}</label>
-                <input
-                  type="number"
-                  value={scores[player.id] ?? ''}
-                  onChange={(e) => onScoreChange(player.id, e.target.value)}
-                  className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
-                  placeholder="0"
-                />
-              </div>
-            ))}
+            {gameData.players.map((player) => {
+              const val = scores[player.id];
+              const hasScore = val !== '' && val !== null && val !== undefined;
+              return (
+                <button key={player.id} onClick={() => setScoreModal({ player })}
+                  className={`w-full p-3 rounded-xl border-2 text-left transition ${
+                    hasScore
+                      ? 'border-green-400 bg-green-50'
+                      : 'border-gray-200 hover:border-indigo-400 hover:bg-indigo-50'
+                  }`}>
+                  <p className="text-xs font-medium text-gray-500 truncate">{player.name}</p>
+                  <p className={`text-2xl font-extrabold mt-0.5 ${hasScore ? 'text-green-700' : 'text-gray-300'}`}>
+                    {hasScore ? val : '—'}
+                  </p>
+                </button>
+              );
+            })}
           </div>
           <button
             onClick={onSubmitScores}
             className="w-full mt-4 bg-green-600 text-white font-semibold py-2.5 rounded-lg hover:bg-green-700 active:bg-green-800 transition"
           >
-            Submit Scores
+            Submit Round
           </button>
         </div>
+      )}
+
+      {scoreModal && (
+        <ScoreEntryModal
+          player={scoreModal.player}
+          onConfirm={(value) => {
+            onScoreChange(scoreModal.player.id, value);
+            setScoreModal(null);
+          }}
+          onCancel={() => setScoreModal(null)}
+        />
       )}
     </div>
   );
