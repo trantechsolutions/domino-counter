@@ -2,6 +2,15 @@ import { useState } from 'react';
 
 const UPDATES = [
   {
+    version: '1.6.0',
+    date: '2026-05-21',
+    changes: [
+      'Bone & Pip redesign — new identity, typography, and 44px tap targets throughout',
+      'Per-route page titles for bookmarkable games',
+      'Reduced-motion support and hue-shifted shadows',
+    ],
+  },
+  {
     version: '1.5.0',
     date: '2026-05-03',
     changes: [
@@ -62,39 +71,39 @@ export default function UpdateLog() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition"
+        className="tap w-full flex items-center justify-between px-5 py-4 text-left hover:bg-[rgb(var(--rule-soft))] transition"
       >
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-slate-700 dark:text-slate-200">What's New</span>
-          <span className="text-[10px] bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
+          <span className="t-body font-bold text-[rgb(var(--ink))]">What's new</span>
+          <span className="t-micro fill-brand px-2 py-0.5 rounded-full font-num normal-case tracking-normal" style={{ letterSpacing: 0 }}>
             v{UPDATES[0].version}
           </span>
         </div>
         <svg
-          className={`w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          className={`w-4 h-4 text-[rgb(var(--ink-subtle))] transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
       {open && (
-        <div className="border-t border-slate-100 dark:border-slate-800 divide-y divide-slate-50 dark:divide-slate-800/60 max-h-72 overflow-y-auto">
+        <div className="border-t border-[rgb(var(--rule-soft))] max-h-72 overflow-y-auto">
           {UPDATES.map((release, i) => (
-            <div key={release.version} className="px-5 py-4">
+            <div key={release.version} className="px-5 py-4 border-b border-[rgb(var(--rule-soft))] last:border-b-0">
               <div className="flex items-center gap-2 mb-2">
-                <span className={`text-xs font-bold ${i === 0 ? 'text-violet-600 dark:text-violet-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                <span className={`font-num t-small font-bold ${i === 0 ? 'text-[rgb(var(--brand))]' : 'text-[rgb(var(--ink-muted))]'}`}>
                   v{release.version}
                 </span>
-                <span className="text-xs text-slate-400 dark:text-slate-500">{release.date}</span>
+                <span className="font-num t-small text-[rgb(var(--ink-subtle))]">{release.date}</span>
                 {i === 0 && (
-                  <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Latest</span>
+                  <span className="t-micro text-[rgb(var(--success))] bg-[rgba(34,120,80,0.1)] px-1.5 py-0.5 rounded-full">Latest</span>
                 )}
               </div>
               <ul className="space-y-1.5">
                 {release.changes.map((change, j) => (
-                  <li key={j} className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
-                    <span className="text-violet-400 dark:text-violet-500 mt-px shrink-0">·</span>
+                  <li key={j} className="flex items-start gap-2 t-small text-[rgb(var(--ink-muted))]">
+                    <span className="pip mt-1.5 shrink-0" style={{ width: 4, height: 4, background: 'rgb(var(--brand))' }} />
                     {change}
                   </li>
                 ))}

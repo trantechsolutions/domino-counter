@@ -26,15 +26,16 @@ export default function PlayerClaimScreen({ gameId, gameData, isHost, onClaim, o
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-      <div className="px-5 py-5 border-b border-slate-100 dark:border-slate-800">
-        <h2 className="text-base font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">Who are you?</h2>
-        <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Select your name to track your score</p>
-      </div>
+    <section className="surface-bone rounded-3xl border-2 border-[rgb(var(--rule))] shadow-pip-lg overflow-hidden">
+      <header className="px-5 py-5 border-b border-[rgb(var(--rule-soft))]">
+        <p className="t-micro text-[rgb(var(--ink-subtle))]">Identify yourself</p>
+        <h2 className="t-h2 text-[rgb(var(--ink))] mt-1">Who are you?</h2>
+        <p className="t-small text-[rgb(var(--ink-muted))] mt-1">Select your name to track your score.</p>
+      </header>
 
       <div className="p-4 space-y-2">
         {players.length === 0 && (
-          <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-6">
+          <p className="t-body text-[rgb(var(--ink-subtle))] text-center py-8">
             {isHost
               ? 'No players yet — add your name below to get started.'
               : 'The host is setting up the game. Check back in a moment, or add your name below.'}
@@ -48,26 +49,26 @@ export default function PlayerClaimScreen({ gameId, gameData, isHost, onClaim, o
               key={player.id}
               onClick={() => !claimed && onClaim(player)}
               disabled={claimed}
-              className={`w-full flex items-center gap-3 p-3.5 rounded-xl border-2 text-left transition ${
+              className={`tap w-full flex items-center gap-3 p-3 rounded-2xl border-2 text-left transition ${
                 claimed
-                  ? 'border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 opacity-50 cursor-default'
-                  : 'border-slate-200 dark:border-slate-700 hover:border-violet-400 dark:hover:border-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/15 active:scale-[0.99]'
+                  ? 'border-[rgb(var(--rule-soft))] opacity-50 cursor-default'
+                  : 'border-[rgb(var(--rule))] hover:border-brand hover:bg-[rgb(var(--brand-soft))] active:scale-[0.99]'
               }`}
             >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 ${
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-num text-base font-bold shrink-0 ${
                 claimed
-                  ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500'
-                  : 'grad-brand text-white shadow-sm shadow-violet-400/20'
+                  ? 'surface-paper border border-[rgb(var(--rule))] text-[rgb(var(--ink-subtle))]'
+                  : 'fill-brand shadow-pip-brand'
               }`}>
                 {player.name.charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">{player.name}</p>
-                {claimed && <p className="text-xs text-slate-400 dark:text-slate-500">Joined on another device</p>}
+                <p className="t-body font-semibold text-[rgb(var(--ink))] truncate">{player.name}</p>
+                {claimed && <p className="t-small text-[rgb(var(--ink-subtle))]">Joined on another device</p>}
               </div>
               {!claimed && (
-                <svg className="w-4 h-4 text-slate-300 dark:text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                <svg className="w-4 h-4 text-[rgb(var(--ink-subtle))] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>
               )}
             </button>
@@ -77,14 +78,14 @@ export default function PlayerClaimScreen({ gameId, gameData, isHost, onClaim, o
         {!adding ? (
           <button
             onClick={() => setAdding(true)}
-            className="w-full flex items-center gap-3 p-3.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-violet-300 dark:hover:border-violet-700 hover:text-violet-500 dark:hover:text-violet-400 transition text-left"
+            className="tap w-full flex items-center gap-3 p-3 rounded-2xl border-2 border-dashed border-[rgb(var(--rule))] text-[rgb(var(--ink-muted))] hover:border-brand hover:text-[rgb(var(--brand))] transition text-left"
           >
-            <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+            <div className="w-10 h-10 rounded-xl surface-paper border border-[rgb(var(--rule))] flex items-center justify-center shrink-0">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
             </div>
-            <span className="text-sm font-medium">I'm not listed — add me</span>
+            <span className="t-body font-medium">I'm not listed — add me</span>
           </button>
         ) : (
           <form onSubmit={handleAddAndClaim} className="flex gap-2 pt-1">
@@ -93,15 +94,15 @@ export default function PlayerClaimScreen({ gameId, gameData, isHost, onClaim, o
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="Your name..."
-              className="flex-1 min-w-0 px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none text-sm bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 transition"
+              placeholder="Your name…"
+              className="tap flex-1 min-w-0 px-3 border border-[rgb(var(--rule))] rounded-xl focus:border-brand outline-none t-body surface-paper text-[rgb(var(--ink))] placeholder-[rgb(var(--ink-subtle))] transition"
             />
             <button type="submit" disabled={!newName.trim() || saving}
-              className="grad-brand text-white font-semibold py-2.5 px-4 rounded-xl hover:opacity-90 transition disabled:opacity-50 shrink-0 text-sm shadow-sm shadow-violet-500/20">
+              className="tap fill-brand t-body font-bold px-4 rounded-xl transition disabled:opacity-50 shrink-0 shadow-pip-brand">
               Join
             </button>
             <button type="button" onClick={() => setAdding(false)}
-              className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 py-2.5 px-2 text-sm transition">
+              className="tap text-[rgb(var(--ink-subtle))] hover:text-[rgb(var(--ink))] px-2 t-small transition">
               Cancel
             </button>
           </form>
@@ -109,10 +110,10 @@ export default function PlayerClaimScreen({ gameId, gameData, isHost, onClaim, o
       </div>
 
       <div className="px-4 pb-4">
-        <button onClick={onSkip} className="w-full text-xs text-slate-300 dark:text-slate-700 hover:text-slate-500 dark:hover:text-slate-400 py-2 transition">
+        <button onClick={onSkip} className="tap w-full t-small text-[rgb(var(--ink-subtle))] hover:text-[rgb(var(--ink-muted))] py-2 transition">
           Skip — manage scores manually
         </button>
       </div>
-    </div>
+    </section>
   );
 }

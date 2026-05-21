@@ -1,89 +1,242 @@
 @import "tailwindcss";
 
-/* Tell Tailwind v4 to use the .dark class for the dark: variant */
+/* ============================================================
+   Bone & Pip — Design System
+   A scorekeeper for Mexican Train dominoes.
+   Identity: bone-ivory surfaces, domino-red brand,
+   ink-black pips. Type: Inter (UI) + JetBrains Mono (numbers).
+   ============================================================ */
+
 @variant dark (&:where(.dark, .dark *));
 
-html {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* ── Design tokens ─────────────────────────────────────────────── */
+/* ── Root tokens ───────────────────────────────────────────── */
 :root {
-  --brand: 139 92 246;          /* violet-500 */
-  --brand-dim: 109 40 217;      /* violet-700 */
-  --surface: 255 255 255;
-  --surface-raised: 249 250 251;
-  --border: 229 231 235;
-  --text-base: 17 24 39;
-  --text-muted: 107 114 128;
-  --text-subtle: 156 163 175;
-  --success: 34 197 94;
-  --warning: 234 179 8;
-  --danger: 239 68 68;
+  /* Brand — domino red, drawn from the dot on a traditional 1-pip */
+  --brand:        200 16 46;     /* #C8102E */
+  --brand-deep:   158 13 36;     /* #9E0D24 */
+  --brand-soft:   251 232 232;   /* tint for hover/bg */
+
+  /* Surfaces — bone-ivory, not pure white */
+  --paper:        247 242 231;   /* #F7F2E7 page */
+  --bone:        252 248 240;   /* #FCF8F0 card */
+  --bone-raised: 255 252 246;   /* slightly above */
+
+  /* Ink — warm near-black, not pure */
+  --ink:           20 17 15;      /* #14110F */
+  --ink-muted:     74 66 58;      /* #4A423A */
+  --ink-subtle:   140 128 114;    /* #8C8072 */
+
+  /* Lines — warm hairlines */
+  --rule:         225 215 195;
+  --rule-soft:    236 228 213;
+
+  /* Functional */
+  --success:       34 120 80;     /* deeper forest, fits the warm palette */
+  --warning:      188 132 32;     /* mustard */
+  --danger:       200 16 46;      /* same as brand — destructive = brand-loud */
+
+  /* Shadow hue (warm red-brown, never pure black) */
+  --shadow-hue: 28 18 12;
 }
 
 .dark {
-  --surface: 15 13 26;
-  --surface-raised: 22 19 38;
-  --border: 39 35 60;
-  --text-base: 241 245 249;
-  --text-muted: 148 163 184;
-  --text-subtle: 100 116 139;
+  --paper:         18 14 12;      /* deep walnut */
+  --bone:         26 21 18;      /* card */
+  --bone-raised:  34 28 24;      /* raised */
+
+  --ink:          245 238 224;
+  --ink-muted:    176 164 146;
+  --ink-subtle:   112 102 90;
+
+  --rule:          54 44 36;
+  --rule-soft:     42 34 28;
+
+  --brand-soft:    60 12 18;
+
+  --shadow-hue:    0 0 0;
 }
 
-/* ── Utility: brand gradient ───────────────────────────────────── */
-.grad-brand {
-  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
-}
-.grad-surface {
-  background: linear-gradient(160deg, rgba(139,92,246,.08) 0%, transparent 60%);
-}
-
-/* ── Glass card ────────────────────────────────────────────────── */
-.glass {
-  background: rgba(var(--surface), 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(var(--border), 0.7);
-}
-.dark .glass {
-  background: rgba(var(--surface-raised), 0.9);
+/* ── Base ──────────────────────────────────────────────────── */
+html {
+  -webkit-tap-highlight-color: transparent;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-feature-settings: "ss01", "cv11";   /* Inter alternates: single-storey a, straight l */
+  background: rgb(var(--paper));
+  color: rgb(var(--ink));
 }
 
-/* ── Smooth focus ring ─────────────────────────────────────────── */
-.ring-brand:focus-visible {
+body {
+  font-family: inherit;
+  background: rgb(var(--paper));
+  color: rgb(var(--ink));
+}
+
+.font-num {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-feature-settings: "tnum", "zero";
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* ── Type scale (golden-ratio-derived, 5 sizes) ────────────── */
+.t-micro { font-size: 11px;   line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; }
+.t-small { font-size: 13px;   line-height: 18px; }
+.t-body  { font-size: 15px;   line-height: 22px; }
+.t-h2    { font-size: 21px;   line-height: 26px; letter-spacing: -0.01em; font-weight: 700; }
+.t-h1    { font-size: 34px;   line-height: 38px; letter-spacing: -0.02em; font-weight: 800; }
+
+/* Numeric display sizes */
+.n-score { font-size: 28px;   line-height: 1; font-weight: 700; }
+.n-total { font-size: 22px;   line-height: 1; font-weight: 800; }
+.n-mega  { font-size: clamp(48px, 14vw, 72px); line-height: 1; font-weight: 800; letter-spacing: -0.02em; }
+
+/* ── Surfaces & elevation ─────────────────────────────────── */
+.surface-paper  { background: rgb(var(--paper)); }
+.surface-bone   { background: rgb(var(--bone)); }
+.surface-raised { background: rgb(var(--bone-raised)); }
+
+/* Hue-shifted shadows — warm red-brown, never pure black */
+.shadow-pip {
+  box-shadow:
+    0 1px 2px rgba(var(--shadow-hue), 0.08),
+    0 2px 6px rgba(var(--shadow-hue), 0.06);
+}
+.shadow-pip-lg {
+  box-shadow:
+    0 2px 4px rgba(var(--shadow-hue), 0.10),
+    0 8px 24px rgba(var(--shadow-hue), 0.12);
+}
+.shadow-pip-brand {
+  box-shadow:
+    0 1px 2px rgba(var(--brand), 0.15),
+    0 6px 16px rgba(var(--brand), 0.18);
+}
+
+/* ── Brand surfaces ───────────────────────────────────────── */
+.fill-brand {
+  background: rgb(var(--brand));
+  color: white;
+}
+.fill-brand:hover { background: rgb(var(--brand-deep)); }
+
+.text-brand    { color: rgb(var(--brand)); }
+.border-brand  { border-color: rgb(var(--brand)); }
+
+/* ── Domino-tile motif (2:1 ratio with center rule) ───────── */
+.tile {
+  position: relative;
+  background: rgb(var(--bone-raised));
+  border: 1px solid rgb(var(--rule));
+  border-radius: 10px;
+  overflow: hidden;
+}
+.tile::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 14%; bottom: 14%;
+  width: 1px;
+  background: rgb(var(--rule));
+  transform: translateX(-0.5px);
+}
+.tile-h::after {
+  left: 14%; right: 14%; top: 50%; bottom: auto;
+  width: auto; height: 1px;
+  transform: translateY(-0.5px);
+}
+
+/* ── Pip dot (the recurring motif) ────────────────────────── */
+.pip {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--ink));
+}
+.pip-brand { background: rgb(var(--brand)); }
+.pip-lg    { width: 10px; height: 10px; }
+
+/* 5-pip grid loader */
+.pip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 8px);
+  grid-template-rows:    repeat(3, 8px);
+  gap: 4px;
+}
+.pip-grid .pip {
+  width: 8px; height: 8px;
+  opacity: 0.15;
+  animation: pip-pulse 1.4s ease-in-out infinite;
+}
+.pip-grid .pip:nth-child(1) { animation-delay: 0.0s; }
+.pip-grid .pip:nth-child(3) { animation-delay: 0.15s; }
+.pip-grid .pip:nth-child(5) { animation-delay: 0.3s; }
+.pip-grid .pip:nth-child(7) { animation-delay: 0.45s; }
+.pip-grid .pip:nth-child(9) { animation-delay: 0.6s; }
+.pip-grid .pip:nth-child(2),
+.pip-grid .pip:nth-child(4),
+.pip-grid .pip:nth-child(6),
+.pip-grid .pip:nth-child(8) { opacity: 0; }
+
+@keyframes pip-pulse {
+  0%, 100% { opacity: 0.15; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+
+/* ── Focus ring ───────────────────────────────────────────── */
+:focus-visible {
   outline: 2px solid rgb(var(--brand));
   outline-offset: 2px;
+  border-radius: 4px;
 }
 
-/* ── Input baseline ────────────────────────────────────────────── */
+/* ── Inputs ───────────────────────────────────────────────── */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
 }
 
-/* ── Pulse dot ─────────────────────────────────────────────────── */
+/* ── Min tap target — 44px floor ──────────────────────────── */
+.tap {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* ── Pulse dot (entered-score indicator) ──────────────────── */
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: .4; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.55; transform: scale(0.85); }
 }
 .pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
 
-/* ── Slide up (modal) ──────────────────────────────────────────── */
+/* ── Modal animations ─────────────────────────────────────── */
 @keyframes slide-up {
   from { transform: translateY(100%); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
 }
-.slide-up { animation: slide-up 0.22s cubic-bezier(0.34,1.56,0.64,1); }
+.slide-up { animation: slide-up 0.24s cubic-bezier(0.22, 1, 0.36, 1); }
 
-/* ── Scale in (sm modal) ───────────────────────────────────────── */
 @keyframes scale-in {
-  from { transform: scale(0.92); opacity: 0; }
+  from { transform: scale(0.96); opacity: 0; }
   to   { transform: scale(1);    opacity: 1; }
 }
-.scale-in { animation: scale-in 0.18s cubic-bezier(0.34,1.56,0.64,1); }
+.scale-in { animation: scale-in 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
 
-/* ── Spin ──────────────────────────────────────────────────────── */
-@keyframes spin {
-  to { transform: rotate(360deg); }
+/* ── Winner reveal — celebratory overshoot ONLY here ──────── */
+@keyframes win-stamp {
+  0%   { transform: scale(0.6) rotate(-3deg); opacity: 0; }
+  60%  { transform: scale(1.05) rotate(1deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg);    opacity: 1; }
+}
+.win-stamp { animation: win-stamp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* ── Spin ─────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.8s linear infinite; }
+
+/* ── Reduced-motion: kill all non-essential animation ─────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .pip-grid .pip { opacity: 0.6; }
 }
